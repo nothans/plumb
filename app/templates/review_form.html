@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Review {{ project.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}/judge">Your review queue</a></div>
+  <h1>{{ project.title }}</h1>
+  {% if project.summary %}<p>{{ project.summary }}</p>{% endif %}
+</div></div>
+<div class="split">
+  <div class="panel">
+    {% if not phase.judging_open %}<div class="alert warn">Judging is not open, so this review cannot be changed.</div>{% endif %}
+    <form class="stack" method="post" action="/projects/{{ project.id }}/review">{{ csrf_field() }}
+      {% for c in criteria %}
+      <fieldset>
+        <legend>{{ c.name }}</legend>
+        {% if c.description %}<p class="muted small">{{ c.description }}</p>{% endif %}
+        <div class="scale" role="radiogroup" aria-label="{{ c.name }}">
+          {% for v in range(c.min_value, c.max_value + 1) %}
+          <input type="radio" id="{{ c.key }}-{{ v }}" name="{{ c.key }}" value="{{ v }}" required
+                 {% if values[c.key] is defined and values[c.key] | string == v | string %}checked{% endif %}
+                 {% if not phase.judging_open %}disabled{% endif %}>
+          <label for="{{ c.key }}-{{ v }}">{{ v }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% endfor %}
+      <label>Comment <span class="hint">Seen by the organizers. Never shown to other judges.</span>
+        <textarea name="comment" maxlength="4000" {% if not phase.judging_open %}disabled{% endif %}>{{ comment }}</textarea></label>
+      {% if phase.judging_open %}<div class="actions"><button class="primary" type="submit">{{ 'Update review' if review else 'Save review' }}</button><a href="/events/{{ event.id }}/judge">Back to queue</a></div>{% endif %}
+    </form>
+  </div>
+  <aside class="panel">
+    <h2>About the project</h2>
+    <p><strong>{{ project.team_name }}</strong>{% if project.track_name %} · {{ project.track_name }}{% endif %}</p>
+    <p class="small">{% for m in members %}{{ m.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% if project.description %}<p class="small">{{ project.description }}</p>{% endif %}
+    <div class="actions">
+      {% if project.repo_url %}<a class="btn" href="{{ project.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}
+      {% if project.demo_url %}<a class="btn" href="{{ project.demo_url }}" rel="nofollow noopener" target="_blank">Demo</a>{% endif %}
+    </div>
+    {% if review %}<p class="muted small mt-s">First saved {{ review.submitted_at | ts }}; last change {{ review.updated_at | ts }}. Every change is in the audit log.</p>{% endif %}
+  </aside>
+</div>
+{% endblock %}

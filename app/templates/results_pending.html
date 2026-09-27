@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Results · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Results are not published yet</h1>
+  <p>Nobody outside the organizing team can see scores or rankings until the organizers publish them. When they do, the ranking is signed and every judge and team gets a verifiable record.</p>
+  {% if is_organizer %}<a class="btn primary" href="/events/{{ event.id }}/manage/results">See live results</a>{% endif %}
+</div>
+{% endblock %}

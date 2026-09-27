@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import phase_tags, csrf_field with context %}
+{% block title %}{{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/">Events</a></div>
+    <h1>{{ event.name }}</h1>
+    {% if event.tagline %}<p>{{ event.tagline }}</p>{% endif %}
+    <div class="actions mt-s">{{ phase_tags(phase) }}</div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/projects?event={{ event.id }}">Gallery ({{ project_count }})</a>
+    {% if 'organizer' in roles or 'admin' in roles %}<a class="btn primary" href="/events/{{ event.id }}/manage">Manage</a>{% endif %}
+  </div>
+</div>
+
+<ol class="timeline" aria-label="Schedule">
+  <li class="{{ 'done' if phase.submissions != 'upcoming' }}"><strong>Submissions open</strong><div class="when">{{ event.submissions_open | ts }}</div></li>
+  <li class="{{ 'now' if phase.submissions == 'open' else ('done' if phase.submissions == 'closed') }}"><strong>Submissions close</strong><div class="when">{{ event.submissions_close | ts }}</div></li>
+  <li class="{{ 'now' if phase.judging_open else ('done' if phase.results_published) }}"><strong>Judging</strong><div class="when">{% if event.judging_close %}until {{ event.judging_close | ts }}{% else %}until results are published{% endif %}</div></li>
+  {% if event.voting_mode != 'off' %}
+  <li class="{{ 'now' if phase.voting == 'open' else ('done' if phase.voting == 'closed') }}"><strong>Community vote</strong><div class="when"><span>{{ event.voting_open | ts }}</span> to <span>{{ event.voting_close | ts }}</span></div></li>
+  {% endif %}
+  <li class="{{ 'done' if phase.results_published }}"><strong>Results</strong><div class="when">{% if event.results_published_at %}{{ event.results_published_at | ts }}{% else %}not yet{% endif %}</div></li>
+</ol>
+
+<div class="split mt-l">
+  <div>
+    {% if event.description %}<div class="panel"><p>{{ event.description }}</p></div>{% endif %}
+
+    <div class="panel">
+      <h2>Tracks</h2>
+      {% if tracks %}<div class="actions">{% for t in tracks %}<a class="tag" href="/projects?event={{ event.id }}&track={{ t.id }}">{{ t.name }}</a>{% endfor %}</div>
+      {% else %}<p class="muted">One open track.</p>{% endif %}
+      {% if prizes %}
+      <h2>Prizes</h2>
+      <table><tbody>{% for p in prizes %}<tr><td><strong>{{ p.name }}</strong>{% if p.track_name %} <span class="tag">{{ p.track_name }}</span>{% endif %}</td><td class="muted">{{ p.description }}</td></tr>{% endfor %}</tbody></table>
+      {% endif %}
+      <h2>How projects are judged</h2>
+      <p class="muted small">Each judge scores their assigned projects on these criteria. Scores are combined with these weights, then corrected for how harsh or generous each judge is. <a href="/events/{{ event.id }}/records">Signed records</a> are issued when results are published.</p>
+      <table>
+        <thead><tr><th>Criterion</th><th>Scale</th><th class="num">Weight</th></tr></thead>
+        <tbody>{% set total = criteria | sum(attribute='weight') %}{% for c in criteria %}<tr><td><strong>{{ c.name }}</strong>{% if c.description %}<br><span class="muted small">{{ c.description }}</span>{% endif %}</td><td class="nowrap">{{ c.min_value }} to {{ c.max_value }}</td><td class="num">{% if total %}{{ (100 * c.weight / total) | round | int }}%{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <aside class="aside-first">
+    <div class="panel">
+      <h2>You</h2>
+      {% if not me %}
+        <p>Log in to join a team, submit, vote or judge.</p>
+        <div class="actions"><a class="btn primary" href="/signup?next=/events/{{ event.id }}">Sign up</a><a class="btn" href="/login?next=/events/{{ event.id }}">Log in</a></div>
+      {% else %}
+        {% if 'judge' in roles %}
+          <p>You are a judge here.</p>
+          <p><a class="btn primary" href="/events/{{ event.id }}/judge">Your review queue</a></p>
+        {% endif %}
+        {% if my_team %}
+          <p>You are on <strong>{{ my_team.name }}</strong>.</p>
+          <div class="actions">
+            <a class="btn" href="/events/{{ event.id }}/team">Team page</a>
+            {% if my_project %}<a class="btn" href="/projects/{{ my_project.id }}">Your project</a>{% elif phase.submissions == 'open' %}<a class="btn primary" href="/events/{{ event.id }}/projects/new">Start your project</a>{% endif %}
+          </div>
+        {% elif 'judge' not in roles and phase.submissions != 'closed' %}
+          <p>Form a team (a team of one is fine) to take part.</p>
+          <a class="btn primary" href="/events/{{ event.id }}/team">Join or create a team</a>
+        {% endif %}
+        {% if phase.voting == 'open' %}
+          <h3>Community vote</h3>
+          <p class="small">{{ event.votes_per_voter }} votes each. Your ballot is shuffled just for you; counts stay hidden until {{ event.voting_close | ts }}.</p>
+          <a class="btn" href="/events/{{ event.id }}/vote">Open your ballot</a>
+        {% endif %}
+      {% endif %}
+      {% if phase.voting == 'closed' %}<p><a href="/events/{{ event.id }}/votes">Community vote results</a></p>{% endif %}
+      {% if phase.results_published %}<p><a class="btn primary" href="/events/{{ event.id }}/results">Results</a></p>{% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

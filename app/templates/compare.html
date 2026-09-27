@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Compare · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}/judge">Your review queue</a></div>
+  <h1>Which is better?</h1>
+  <p>{{ done }} of {{ possible }} possible pairs from your assigned projects compared. Plumb shows you the pair whose order is least certain right now, so every answer counts.</p>
+  <progress max="{{ [possible, 1] | max }}" value="{{ done }}" aria-label="Comparisons done"></progress>
+</div></div>
+{% if not phase.judging_open %}
+<div class="alert warn">Judging is not open, so comparisons cannot be recorded.</div>
+{% endif %}
+{% if pair %}
+<div class="versus">
+  {% for p in pair %}
+  <section class="panel">
+    <h2 class="mt-0">{{ p.title }}</h2>
+    <p class="muted small">{{ p.team_name }}{% if p.track_name %} · {{ p.track_name }}{% endif %}</p>
+    {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+    {% if p.description %}<p class="small">{{ p.description }}</p>{% endif %}
+    <div class="actions">
+      {% if p.repo_url %}<a class="btn" href="{{ p.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}
+      {% if p.demo_url %}<a class="btn" href="{{ p.demo_url }}" rel="nofollow noopener" target="_blank">Demo</a>{% endif %}
+    </div>
+    {% if phase.judging_open %}
+    <form class="mt-m" method="post" action="/events/{{ event.id }}/compare">{{ csrf_field() }}
+      <input type="hidden" name="a" value="{{ pair[0].id }}"><input type="hidden" name="b" value="{{ pair[1].id }}">
+      <input type="hidden" name="winner" value="{{ p.id }}">
+      <button class="primary" type="submit">{{ p.title }} is better</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+<p class="small muted">Comparisons are yours alone, like your scores. They feed a Bradley-Terry ranking the organizers see next to the score-based one.</p>
+{% else %}
+<div class="empty"><p>{% if possible == 0 %}You need at least two assigned projects to compare.{% else %}You have compared every pair of your assigned projects. Thank you.{% endif %}</p>
+  <a class="btn" href="/events/{{ event.id }}/judge">Back to your queue</a></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Record {{ record.id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a> / <a href="/events/{{ event.id }}/records">Records</a></div>
+    <h1>{% if record.kind == 'judge' %}Judge participation{% else %}Results of {{ event.name }}{% endif %}</h1>
+    <p>{% if check.ok %}<span class="tag ok">Signature valid</span>{% else %}<span class="tag bad">{{ check.reason }}</span>{% endif %}
+      Signed {{ record.issued_at | ts }} with key <code>{{ record.key_id }}</code>.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/records/{{ record.id }}.json">Download envelope</a></div>
+</div>
+
+{% if record.kind == 'judge' %}
+<div class="panel">
+  <p><strong>{{ body.judge.name }}</strong> judged {{ event.name }} and filed <strong>{{ body.reviews }}</strong> reviews.</p>
+  <p class="small">Review digest <span class="hash">{{ body.review_digest }}</span></p>
+  <p class="muted small">The digest is a SHA-256 over the judge's own reviews (project, scores, comment, last edit). The judge can recompute it from their score export to confirm the portal recorded exactly what they submitted, without anyone else seeing the scores.</p>
+</div>
+{% else %}
+<div class="panel">
+  <p>The ranking of {{ body.ranking | length }} projects, the rubric weights, the fitted judge-lean and noise sizes, and the audit log head at publication:</p>
+  <p class="small">Audit head: entry {{ body.audit_head.seq }}, <span class="hash">{{ body.audit_head.hash }}</span></p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Check it yourself</h2>
+  <p>The envelope below holds the exact bytes that were signed. Verify it on <a href="/verify">the verify page</a>, or offline with <code>python tools/verify_record.py envelope.json --key {{ request.app.state.signer.public_key_b64 }}</code>. Changing any character of the payload breaks the signature.</p>
+  <pre class="json">{{ envelope }}</pre>
+</div>
+{% endblock %}

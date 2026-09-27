@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Ballot · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head sticky-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Your ballot</h1>
+  <p>You have <strong>{{ remaining }}</strong> of {{ event.votes_per_voter }} votes left. Voting closes {{ event.voting_close | ts }}.</p>
+</div></div>
+<div class="panel">
+  <p class="muted small">This order is shuffled for you alone, so no project gets the top slot on everyone's ballot. Counts stay hidden from everyone, organizers included, until voting closes. You can withdraw a vote and use it elsewhere until then.</p>
+  <div class="table-wrap">
+  <table>
+    <tbody>{% for p in projects %}
+      <tr>
+        <td><a href="/projects/{{ p.id }}"><strong>{{ p.title }}</strong></a><br><span class="muted small">{{ p.team_name }}{% if p.track_name %} · {{ p.track_name }}{% endif %}</span>
+          {% if p.summary %}<br><span class="small">{{ p.summary }}</span>{% endif %}</td>
+        <td class="num">
+          {% if p.team_id == own_team %}<span class="tag">Your team</span>
+          {% elif p.id in votes %}
+            <span class="tag accent">Voted</span>
+            <form class="inline" method="post" action="/projects/{{ p.id }}/vote">{{ csrf_field() }}<input type="hidden" name="action" value="withdraw"><input type="hidden" name="back" value="/events/{{ event.id }}/vote"><button class="link-btn" type="submit">Withdraw</button></form>
+          {% else %}
+            <form class="inline" method="post" action="/projects/{{ p.id }}/vote">{{ csrf_field() }}<input type="hidden" name="back" value="/events/{{ event.id }}/vote"><button type="submit" {% if remaining <= 0 %}disabled{% endif %}>Vote</button></form>
+          {% endif %}
+        </td>
+      </tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

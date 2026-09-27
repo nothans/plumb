@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}{% if event %}Settings · {{ event.name }}{% else %}New event{% endif %}{% endblock %}
+{% block content %}
+{% if event %}{% set active = 'settings' %}{% include "organizer/_nav.html" %}{% else %}
+<div class="page-head"><div><div class="crumbs"><a href="/">Events</a></div><h1>New event</h1><p>All times are UTC.</p></div></div>
+{% endif %}
+<div class="panel">
+<form class="stack wide" method="post" action="{% if event %}/events/{{ event.id }}/manage/settings{% else %}/events/new{% endif %}">{{ csrf_field() }}
+  <label>Name<input type="text" name="name" value="{{ form.name or '' }}" maxlength="120" required></label>
+  <label>Tagline<input type="text" name="tagline" value="{{ form.tagline or '' }}" maxlength="200"></label>
+  <label>Description<textarea name="description" maxlength="5000">{{ form.description or '' }}</textarea></label>
+  <fieldset>
+    <legend>Schedule (UTC)</legend>
+    <div class="row">
+      <label>Submissions open<input type="datetime-local" name="submissions_open" value="{{ form.submissions_open | dtlocal }}" required></label>
+      <label>Submissions close<input type="datetime-local" name="submissions_close" value="{{ form.submissions_close | dtlocal }}" required></label>
+      <label>Judging closes <span class="hint">Optional. Otherwise judging runs until results are published.</span><input type="datetime-local" name="judging_close" value="{{ form.judging_close | dtlocal }}"></label>
+    </div>
+    <p class="muted small mt-s">Moving a deadline is allowed and recorded in the audit log with the old and new values.</p>
+  </fieldset>
+  <fieldset>
+    <legend>Community vote</legend>
+    <div class="row">
+      <label>Who can vote
+        <select name="voting_mode">
+          <option value="off" {% if (form.voting_mode or 'off') == 'off' %}selected{% endif %}>Nobody (no community vote)</option>
+          <option value="accounts" {% if form.voting_mode == 'accounts' %}selected{% endif %}>Anyone with an account</option>
+          <option value="participants" {% if form.voting_mode == 'participants' %}selected{% endif %}>Participants of this event only</option>
+        </select>
+      </label>
+      <label>Voting opens<input type="datetime-local" name="voting_open" value="{{ form.voting_open | dtlocal }}"></label>
+      <label>Voting closes<input type="datetime-local" name="voting_close" value="{{ form.voting_close | dtlocal }}"></label>
+      <label>Votes per voter<input type="number" name="votes_per_voter" min="1" max="50" value="{{ form.votes_per_voter or 3 }}"></label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Pairwise judging</legend>
+    <input type="hidden" name="pairwise" value="0">
+    <div class="checks"><label><input type="checkbox" name="pairwise" value="1" {% if form.pairwise in (1, '1', True, 'on') or (form.pairwise is sequence and '1' in form.pairwise) %}checked{% endif %}>Also let judges pick the better of two assigned projects</label></div>
+    <p class="muted small mt-s">Comparisons feed a Bradley-Terry ranking shown next to the score-based one. Scores remain the ranking of record.</p>
+  </fieldset>
+  <div class="row">
+    <label>Reviews per project <span class="hint">Target for automatic assignment.</span><input type="number" name="reviews_per_project" min="1" max="20" value="{{ form.reviews_per_project or 3 }}"></label>
+    <label>Maximum team size<input type="number" name="max_team_size" min="1" max="50" value="{{ form.max_team_size or 4 }}"></label>
+  </div>
+  <label>{% if event %}Add tracks{% else %}Tracks{% endif %} <span class="hint">One per line.{% if tracks %} Current: {% for t in tracks %}{{ t.name }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</span>
+    <textarea name="tracks" rows="4">{% if not event %}{{ form.tracks or '' }}{% endif %}</textarea></label>
+  <label>Prizes <span class="hint">One per line, as "Name | description".</span><textarea name="prizes" rows="4">{{ form.prizes or '' }}</textarea></label>
+  <div class="actions"><button class="primary" type="submit">{% if event %}Save settings{% else %}Create event{% endif %}</button></div>
+</form>
+</div>
+{% endblock %}

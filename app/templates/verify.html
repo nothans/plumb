@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Verify a record{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>Verify a record</h1>
+  <p>Paste a record envelope (the JSON from a record's "Download envelope" link). This checks the signature against this portal's public key, not any key inside the envelope.</p>
+</div></div>
+<div class="split">
+  <div class="panel">
+    {% if result %}
+      {% if result.ok %}
+        <div class="notice" role="status"><strong>Valid.</strong> This portal signed exactly this payload.</div>
+        <pre class="json">{{ result.body | tojson(indent=2) }}</pre>
+      {% else %}
+        <div class="alert" role="alert"><strong>Not valid.</strong> {{ result.reason | capitalize }}.</div>
+      {% endif %}
+    {% endif %}
+    <form class="stack" method="post" action="/verify">{{ csrf_field() }}
+      <label>Envelope<textarea name="envelope" required spellcheck="false" class="mono">{{ pasted }}</textarea></label>
+      <div><button class="primary" type="submit">Verify</button></div>
+    </form>
+  </div>
+  <aside class="panel">
+    <h2>Do not trust us</h2>
+    <p class="small">A page on this server saying "valid" is only as good as the server. To check without it, save the envelope and run the standalone checker from the repository against the key you pinned earlier:</p>
+    <pre class="json">python tools/verify_record.py envelope.json \
+  --key {{ request.app.state.signer.public_key_b64 }}</pre>
+    <p class="small">Key id <code>{{ request.app.state.signer.key_id }}</code>, also at <a href="/.well-known/plumb-key.json">/.well-known/plumb-key.json</a>.</p>
+  </aside>
+</div>
+{% endblock %}

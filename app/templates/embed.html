@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ event.name }} projects</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/plumb.svg" type="image/svg+xml">
+</head>
+<body class="embed">
+<main>
+  <h1 class="vh">{{ event.name }} projects</h1>
+  <p class="small muted">{{ total }} projects from <a href="{{ base_url }}/events/{{ event.id }}" target="_blank" rel="noopener">{{ event.name }}</a></p>
+  <div class="cards">
+    {% for p in projects %}
+    <article class="card">
+      <h2><a href="{{ base_url }}/projects/{{ p.id }}" target="_blank" rel="noopener">{{ p.title }}</a></h2>
+      {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+      <div class="meta"><span>{{ p.team_name }}</span>{% if p.track_name %}<span class="tag">{{ p.track_name }}</span>{% endif %}</div>
+    </article>
+    {% else %}
+    <div class="empty"><p>No projects yet.</p></div>
+    {% endfor %}
+  </div>
+</main>
+</body>
+</html>

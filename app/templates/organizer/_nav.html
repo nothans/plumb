@@ -1,0 +1,22 @@
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a> / Organizer</div>
+    <h1>{{ event.name }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/events/{{ event.id }}/export/scores.csv">Scores CSV</a>
+    <a class="btn" href="/events/{{ event.id }}/export/event.json">Export event</a>
+  </div>
+</div>
+<nav class="subnav" aria-label="Organizer">
+  <a href="/events/{{ event.id }}/manage" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Progress</a>
+  <a href="/events/{{ event.id }}/manage/judges" {% if active == 'judges' %}aria-current="page"{% endif %}>Judges</a>
+  <a href="/events/{{ event.id }}/manage/assignments" {% if active == 'assignments' %}aria-current="page"{% endif %}>Assignments</a>
+  <a href="/events/{{ event.id }}/manage/rubric" {% if active == 'rubric' %}aria-current="page"{% endif %}>Rubric</a>
+  <a href="/events/{{ event.id }}/manage/reviews" {% if active == 'reviews' %}aria-current="page"{% endif %}>Reviews</a>
+  <a href="/events/{{ event.id }}/manage/results" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
+  <a href="/events/{{ event.id }}/manage/integrity" {% if active == 'integrity' %}aria-current="page"{% endif %}>Integrity</a>
+  <a href="/events/{{ event.id }}/manage/audit" {% if active == 'audit' %}aria-current="page"{% endif %}>Audit log</a>
+  <a href="/events/{{ event.id }}/manage/integrations" {% if active == 'integrations' %}aria-current="page"{% endif %}>Integrations</a>
+  <a href="/events/{{ event.id }}/manage/settings" {% if active == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+</nav>

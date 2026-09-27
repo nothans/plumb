@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import phase_tags %}
+{% block title %}Progress · {{ event.name }}{% endblock %}
+{% block head_extra %}{% if phase.judging_open %}<meta http-equiv="refresh" content="60">{% endif %}{% endblock %}
+{% block content %}
+{% set active = 'dashboard' %}{% include "organizer/_nav.html" %}
+{% set covered = prog.projects | length - prog.under_target %}
+
+<div class="panel status-line">
+  <div>
+    <div class="actions">{{ phase_tags(phase) }}</div>
+    <p class="headline mt-s">
+      {% if not chain.ok %}The audit log fails verification. Look at Integrity before anything else.
+      {% elif phase.results_published %}Results are published and signed. Reviews are locked.
+      {% elif phase.submissions != 'closed' %}Submissions are {{ phase.submissions }}; judging starts when they close on {{ event.submissions_close | ts }}.
+      {% elif prog.under_target %}{{ prog.under_target }} of {{ prog.projects | length }} projects have fewer than {{ prog.target }} reviews.
+      {% elif duplicates or flagged %}Coverage is complete; {{ (duplicates | length) + (flagged | length) }} item{{ '' if (duplicates | length) + (flagged | length) == 1 else 's' }} below need a decision before you publish.
+      {% else %}Every project has {{ prog.target }} or more reviews. Check the live results, then publish.{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if not phase.results_published and phase.submissions == 'closed' %}
+      {% if prog.under_target %}<a class="btn primary" href="/events/{{ event.id }}/manage/assignments">Assign more judges</a>
+      {% else %}<a class="btn primary" href="/events/{{ event.id }}/manage/results">Review results</a>{% endif %}
+    {% elif phase.results_published %}<a class="btn primary" href="/events/{{ event.id }}/results">Published results</a>{% endif %}
+  </div>
+</div>
+
+{% if not chain.ok or duplicates or flagged %}
+<div class="panel">
+  <h2 class="mt-0">Needs a decision</h2>
+  {% if not chain.ok %}<div class="alert">The audit log fails verification at entry {{ chain.broken_at }}: someone changed the database outside Plumb. <a href="/events/{{ event.id }}/manage/integrity">Details</a></div>{% endif %}
+  {% if duplicates %}
+  <h3>Possible duplicate submissions</h3>
+  <ul>{% for d in duplicates %}<li><a href="/projects/{{ d.first.id }}">{{ d.first.title }}</a> and <a href="/projects/{{ d.second.id }}">{{ d.second.title }}</a>: {{ d.reasons | join(", ") }}. <a href="/events/{{ event.id }}/manage/integrity">Decide which counts</a></li>{% endfor %}</ul>
+  {% endif %}
+  {% if flagged %}
+  <h3>Judges to look at</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Judge</th><th class="num">Reviews</th><th class="num">Lean</th><th>Why</th></tr></thead>
+    <tbody>{% for j in flagged %}<tr>
+      <td><a href="/events/{{ event.id }}/manage/reviews?judge={{ j.judge }}">{{ names[j.judge] }}</a></td>
+      <td class="num">{{ j.n_reviews }}</td><td class="num">{{ '%+.1f' | format(j.leniency) }}</td>
+      <td>{% for f in j.flags %}{% if f == 'flat' %}<span class="tag warn">same score for every project</span>{% elif f == 'harsh' %}<span class="tag">harsher than peers</span>{% elif f == 'generous' %}<span class="tag">more generous than peers</span>{% endif %} {% endfor %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="small muted">Lean is corrected for automatically. A judge who gives every project the same score says nothing about which is better, which is worth a conversation.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2 class="mt-0">Coverage</h2>
+  <div class="stats">
+    <div class="stat"><div class="n">{{ covered }} / {{ prog.projects | length }}</div><div class="l">projects with {{ prog.target }}+ reviews</div></div>
+    <div class="stat"><div class="n">{{ prog.reviewed }} / {{ prog.assigned }}</div><div class="l">assigned reviews done</div></div>
+    <div class="stat"><div class="n">{{ prog.idle_judges | length }}</div><div class="l">judges with open queues</div></div>
+    {% if event.voting_mode != 'off' %}<div class="stat"><div class="n">{{ turnout.voters }}</div><div class="l">community voters</div></div>{% endif %}
+  </div>
+  <progress max="{{ [prog.projects | length, 1] | max }}" value="{{ covered }}" aria-label="Projects at the review target"></progress>
+</div>
+
+<div class="panel">
+  <h2 class="mt-0">{% if show_all %}All projects{% else %}Projects below target{% endif %}</h2>
+  {% set rows = prog.projects if show_all else (prog.projects | selectattr('reviewed', 'lt', prog.target) | list) %}
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Project</th><th class="col-opt">Track</th><th class="num">Assigned</th><th class="num">Reviewed</th></tr></thead>
+    <tbody>{% for p in rows %}<tr>
+      <td><a href="/projects/{{ p.id }}">{{ p.title }}</a><br><span class="small muted">{{ p.team_name }}</span></td>
+      <td class="col-opt">{{ tracks.get(p.track_id, '') }}</td>
+      <td class="num">{{ p.assigned }}</td>
+      <td class="num">{% if p.reviewed < prog.target %}<span class="tag warn">{{ p.reviewed }}</span>{% else %}{{ p.reviewed }}{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">Every project has at least {{ prog.target }} reviews.</p>{% endif %}
+  <p class="small mt-s">{% if show_all %}<a href="/events/{{ event.id }}/manage">Show only projects below target</a>{% else %}<a href="/events/{{ event.id }}/manage?all=1">Show all {{ prog.projects | length }} projects</a>{% endif %}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Import an event{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="crumbs"><a href="/">Events</a></div>
+  <h1>Import an event</h1>
+  <p>Load a whole event from JSON in the DOGFOOD fixture shape: event, tracks, judges, teams, projects, scores. Any Plumb export works too. The import is all or nothing; a file with problems changes nothing and lists what is wrong.</p>
+</div></div>
+<div class="panel">
+<form class="stack" method="post" action="/events/import" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>JSON file<input type="file" name="file" accept="application/json,.json" required></label>
+  <label>Event id <span class="hint">Optional. Use a new id to import a copy of an event that already exists here.</span><input type="text" name="event_id" maxlength="60" placeholder="evt_..."></label>
+  <div><button class="primary" type="submit">Import</button></div>
+</form>
+</div>
+{% endblock %}

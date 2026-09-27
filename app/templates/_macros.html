@@ -1,0 +1,45 @@
+{% macro csrf_field() %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+
+{% macro phase_tags(phase) %}
+  {% if phase.submissions == "open" %}<span class="tag ok">Submissions open</span>
+  {% elif phase.submissions == "upcoming" %}<span class="tag">Opens soon</span>
+  {% else %}<span class="tag">Submissions closed</span>{% endif %}
+  {% if phase.judging_open %}<span class="tag accent">Judging</span>{% endif %}
+  {% if phase.voting == "open" %}<span class="tag accent">Voting open</span>{% elif phase.voting == "closed" %}<span class="tag">Voting closed</span>{% endif %}
+  {% if phase.results_published %}<span class="tag ok">Results published</span>{% endif %}
+{% endmacro %}
+
+{# A 90% interval on the 0..100 scale, as SVG (the CSP forbids inline styles).
+   Fixed pixel size so strokes stay crisp: x = 2 * score. #}
+{% macro interval(p) %}
+{% set lo = [0, p.low] | max %}{% set hi = [100, p.high] | min %}
+{% set adj = [[p.adjusted, 0] | max, 100] | min %}{% set raw = [[p.raw_mean, 0] | max, 100] | min %}
+<svg class="ivalsvg" width="200" height="22" viewBox="0 0 200 22" role="img"
+     aria-label="adjusted {{ p.adjusted | num }}, 90% interval {{ p.low | num }} to {{ p.high | num }}, raw average {{ p.raw_mean | num }}">
+  <line x1="50" y1="1" x2="50" y2="21" class="iv-grid"/><line x1="100" y1="1" x2="100" y2="21" class="iv-grid"/><line x1="150" y1="1" x2="150" y2="21" class="iv-grid"/>
+  <rect x="{{ 2 * lo }}" y="4" width="{{ [2 * (hi - lo), 1] | max }}" height="9" rx="2" class="iv-band"/>
+  <rect x="{{ 2 * adj - 1.5 }}" y="1" width="3" height="15" class="iv-pt"/>
+  <circle cx="{{ 2 * raw }}" cy="18.5" r="2.5" class="iv-raw"/>
+</svg>
+{% endmacro %}
+
+{% macro interval_legend() %}
+<div class="legend">
+  <span><svg width="18" height="12" aria-hidden="true"><rect x="0" y="2" width="18" height="8" rx="2" class="iv-band"/></svg>90% interval</span>
+  <span><svg width="6" height="14" aria-hidden="true"><rect x="1.5" y="0" width="3" height="14" class="iv-pt"/></svg>adjusted score</span>
+  <span><svg width="8" height="8" aria-hidden="true"><circle cx="4" cy="4" r="2.8" class="iv-raw"/></svg>raw average</span>
+  <span>Gridlines at 25, 50, 75. <strong>Beats next</strong> is the chance a project truly scores above the one ranked just below it; 50% is a coin flip.</span>
+</div>
+{% endmacro %}
+
+{% macro project_card(p, show_event=false) %}
+<article class="card">
+  <h2 class="card-title"><a href="/projects/{{ p.id }}">{{ p.title }}</a></h2>
+  {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+  <div class="meta">
+    <span>{{ p.team_name }}</span>
+    {% if p.track_name %}<span class="tag">{{ p.track_name }}</span>{% endif %}
+    {% if show_event %}<span class="small">{{ p.event_name }}</span>{% endif %}
+  </div>
+</article>
+{% endmacro %}

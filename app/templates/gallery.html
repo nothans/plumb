@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import project_card %}
+{% block title %}Gallery{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Gallery</h1>
+    <p>{{ total }} submitted project{{ '' if total == 1 else 's' }}{% if q %} matching "{{ q }}"{% endif %}.</p>
+  </div>
+</div>
+<form class="filters" method="get" action="/projects" role="search">
+  <label>Search<input type="search" name="q" value="{{ q }}" placeholder="Title, summary or team"></label>
+  <label>Event
+    <select name="event">
+      <option value="">All events</option>
+      {% for e in events %}<option value="{{ e.id }}" {% if e.id == event_id %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if tracks %}
+  <label>Track
+    <select name="track">
+      <option value="">All tracks</option>
+      {% for t in tracks %}<option value="{{ t.id }}" {% if t.id == track_id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <button type="submit">Filter</button>
+  {% if q or event_id or track_id %}<a class="btn" href="/projects">Clear</a>{% endif %}
+</form>
+{% if projects %}
+<div class="cards">
+  {% for p in projects %}{{ project_card(p, show_event=not event_id and events | length > 1) }}{% endfor %}
+</div>
+{% if pages > 1 %}
+<nav class="actions mt-m" aria-label="Pages">
+  {% for n in range(1, pages + 1) %}
+    {% if n == page %}<span class="btn primary" aria-current="page">{{ n }}</span>
+    {% else %}<a class="btn" href="/projects?q={{ q | urlencode }}&event={{ event_id }}&track={{ track_id }}&page={{ n }}">{{ n }}</a>{% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
+{% else %}
+<div class="empty">
+  <p>{% if q or event_id or track_id %}Nothing matches those filters.{% else %}No projects have been submitted yet.{% endif %}</p>
+  {% if q or event_id or track_id %}<a class="btn" href="/projects">Show everything</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

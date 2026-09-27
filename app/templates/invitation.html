@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Invitation{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <h1>You are invited to {{ inv.role }} {{ inv.event_name }}</h1>
+  <p>This invitation is for <strong>{{ inv.email }}</strong>.</p>
+  {% if used %}
+    <p class="muted">It has already been accepted. <a href="/login">Log in</a> to continue.</p>
+  {% elif me %}
+    {% if me.email | lower == inv.email | lower %}
+      <form method="post" action="/invitations/{{ token }}">{{ csrf_field() }}<button class="primary" type="submit">Accept as {{ me.name }}</button></form>
+    {% else %}
+      <div class="alert warn">You are logged in as {{ me.email }}. Log out and come back to accept as {{ inv.email }}.</div>
+    {% endif %}
+  {% elif needs_account and not can_claim %}
+    <div class="alert warn">An account for {{ inv.email }} already belongs to another event. Log in to it (or ask that event's organizer for its invitation link) and come back to accept.</div>
+  {% elif needs_account %}
+    <p>Set up your account to accept.</p>
+    <form class="stack" method="post" action="/invitations/{{ token }}">{{ csrf_field() }}
+      <label>Name<input type="text" name="name" maxlength="100" autocomplete="name" required></label>
+      <label>Password <span class="hint">At least 10 characters.</span><input type="password" name="password" minlength="10" autocomplete="new-password" required></label>
+      <div><button class="primary" type="submit">Create account and accept</button></div>
+    </form>
+  {% else %}
+    <p>You already have an account. <a href="/login?next=/invitations/{{ token }}">Log in</a> to accept.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{# How to read the numbers. Plain words first; JUDGING.md has the math. #}
+<div class="stats">
+  <div class="stat"><div class="n">{{ fit.n_observations }}</div><div class="l">reviews used</div></div>
+  <div class="stat"><div class="n">&plusmn;{{ fit.judge_sd | num }}</div><div class="l">typical judge lean</div></div>
+  <div class="stat"><div class="n">&plusmn;{{ fit.noise_sd | num }}</div><div class="l">review-to-review noise</div></div>
+  <div class="stat"><div class="n">{{ fit.spread_sd | num }}</div><div class="l">true spread between projects</div></div>
+</div>
+<p class="mt-m">Each review's criterion scores are combined with the rubric weights into one number from 0 to 100. Then every score is modelled as <em>project quality + judge lean + noise</em>, and each judge's lean is estimated from the projects they share with other judges. A judge who reviewed few projects is assumed to be typical unless the data says otherwise. The adjusted score is the project's quality with judge lean removed; it is not pulled toward the middle for having fewer reviews, but its interval is wider.</p>
+{% if fit.spread_sd < fit.noise_sd / 3 %}
+<div class="alert warn">These reviews barely separate the projects: the differences between projects are small next to the disagreement between reviews of the same project. Treat neighbouring ranks as ties, and look at the "beats next" column before awarding a close prize.</div>
+{% endif %}
+{% if fit.components > 1 %}
+<div class="alert warn">The judges fall into {{ fit.components }} groups that share no projects, so judge lean cannot be compared across groups. Add assignments that bridge them.</div>
+{% endif %}

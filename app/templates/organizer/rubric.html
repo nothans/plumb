@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Rubric · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'rubric' %}{% include "organizer/_nav.html" %}
+<div class="panel">
+  <h2>Weights</h2>
+  <p>Weights are relative: 2 counts twice as much as 1. They are applied when scores are combined, so you can change them at any time before results are published and the live ranking follows. Every change is in the audit log.</p>
+  {% if event.results_published_at %}<div class="alert warn">Results are published; the rubric is locked.</div>{% endif %}
+  <form class="stack" method="post" action="/events/{{ event.id }}/manage/rubric">{{ csrf_field() }}
+    <table>
+      <thead><tr><th>Criterion</th><th>Scale</th><th class="num">Weight</th><th class="num">Share</th></tr></thead>
+      <tbody>{% set total = criteria | sum(attribute='weight') %}{% for c in criteria %}
+        <tr>
+          <td><strong>{{ c.name }}</strong>{% if c.description %}<br><span class="small muted">{{ c.description }}</span>{% endif %}</td>
+          <td>{{ c.min_value }} to {{ c.max_value }}</td>
+          <td class="num"><input class="num-input" type="number" name="weight_{{ c.id }}" value="{{ c.weight | round(2) }}" min="0" max="100" step="0.1" aria-label="Weight for {{ c.name }}" {% if event.results_published_at %}disabled{% endif %}></td>
+          <td class="num">{% if total %}{{ (100 * c.weight / total) | round | int }}%{% endif %}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table>
+    {% if not has_reviews %}
+    <fieldset>
+      <legend>Add a criterion</legend>
+      <div class="row">
+        <label>Name<input type="text" name="new_name" maxlength="60"></label>
+        <label>Description<input type="text" name="new_description" maxlength="300"></label>
+        <label>Weight<input type="number" name="new_weight" value="1" min="0" max="100" step="0.1"></label>
+      </div>
+      <p class="small muted mt-s">Criteria can only be added before the first review, so every review scores the same things.</p>
+    </fieldset>
+    {% endif %}
+    {% if not event.results_published_at %}<div><button class="primary" type="submit">Save rubric</button></div>{% endif %}
+  </form>
+</div>
+{% endblock %}

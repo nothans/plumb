@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Records · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Signed records</h1>
+  <p>Statements this portal signed when results were published. Each can be checked against the <a href="/.well-known/plumb-key.json">public key</a>, here or offline.</p>
+</div></div>
+<div class="panel">
+{% if records %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Record</th><th>Kind</th><th>About</th><th>Issued</th></tr></thead>
+  <tbody>{% for r in records %}
+    <tr>
+      <td><a class="mono" href="/records/{{ r.row.id }}">{{ r.row.id }}</a></td>
+      <td><span class="tag">{{ r.row.kind }}</span></td>
+      <td>{% if r.row.kind == 'judge' %}{{ r.body.judge.name }}, {{ r.body.reviews }} reviews
+          {% elif r.row.kind == 'team' %}{{ r.body.team.name }}: {{ r.body.project.title }}{% if r.body.placement %}, rank {{ r.body.placement.rank }} of {{ r.body.placement.of }}{% endif %}
+          {% else %}The ranking of {{ r.body.ranking | length }} projects{% endif %}</td>
+      <td class="nowrap">{{ r.row.issued_at | ts }}</td>
+    </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty"><p>No records yet. They are issued when the organizers publish results.</p></div>
+{% endif %}
+</div>
+{% endblock %}

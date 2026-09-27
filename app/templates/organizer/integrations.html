@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Integrations · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'integrations' %}{% include "organizer/_nav.html" %}
+
+<div class="panel">
+  <h2 class="mt-0">Webhooks</h2>
+  <p>Every audited action in this event (submissions, reviews, assignments, votes, publication, and the rest) is POSTed to each URL below, in order, as JSON. Each delivery carries <code>X-Plumb-Signature: sha256=&lt;HMAC of the body with the webhook's secret&gt;</code> so the receiver can reject forgeries. A failing receiver is retried with backoff and never skipped. Addresses on private networks are refused.</p>
+  {% if new_secret %}
+  <div class="notice" role="status">Webhook added. Its secret is shown once: <code>{{ new_secret }}</code></div>
+  {% endif %}
+  {% if hooks %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>URL</th><th class="num">Delivered up to</th><th>Last attempt</th><th></th></tr></thead>
+    <tbody>{% for h in hooks %}<tr>
+      <td class="mono small">{{ h.url }}</td>
+      <td class="num">#{{ h.cursor }}</td>
+      <td class="small">{% if h.last %}{% if h.last.status == 'delivered' %}<span class="tag ok">delivered</span>{% else %}<span class="tag bad">{{ h.last.status }}</span> {{ h.last.last_error or '' }}{% endif %} {{ h.last.updated_at | ts }}{% else %}<span class="muted">nothing yet</span>{% endif %}</td>
+      <td><form class="inline" method="post" action="/events/{{ event.id }}/manage/integrations/webhooks/{{ h.id }}/delete">{{ csrf_field() }}<button class="link-btn" type="submit">Remove</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  <form class="row mt-s" method="post" action="/events/{{ event.id }}/manage/integrations/webhooks">{{ csrf_field() }}
+    <label>Receiver URL<input type="url" name="url" placeholder="https://chat.example.org/hooks/plumb" required></label>
+    <button type="submit">Add webhook</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 class="mt-0">Embed the gallery</h2>
+  <p>Paste this into any site to show this event's projects. The widget is read-only and is the one Plumb page other sites may frame.</p>
+  <textarea class="mono" rows="3" readonly aria-label="Embed snippet">&lt;iframe src="{{ base_url }}/embed/events/{{ event.id }}" title="{{ event.name }} projects" width="100%" height="600" loading="lazy" style="border:0"&gt;&lt;/iframe&gt;</textarea>
+  <p class="small muted mt-s">Add <code>?track=&lt;track id&gt;</code> to show one track, <code>&amp;limit=12</code> to cap the count. <a href="/embed/events/{{ event.id }}" target="_blank" rel="noopener">Preview</a></p>
+</div>
+
+<div class="panel">
+  <h2 class="mt-0">API</h2>
+  <p>Everything on these pages is also available as JSON. Create a token on <a href="/me">your page</a>, send it as <code>Authorization: Bearer &lt;token&gt;</code>, and see <a href="/api">the reference</a> or the <a href="/api/openapi.json">OpenAPI document</a>. This event's endpoints start with <code>/api/v1/events/{{ event.id }}</code>.</p>
+</div>
+{% endblock %}

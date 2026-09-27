@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Results · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+    <h1>Results</h1>
+    <p>Published {{ event.results_published_at | ts }}.</p>
+  </div>
+  <div class="actions">
+    {% if results_record %}<a class="btn primary" href="/records/{{ results_record.id }}">Signed record</a>{% endif %}
+    <a class="btn" href="/events/{{ event.id }}/records">All records</a>
+  </div>
+</div>
+{% if res.body.awards %}
+<div class="panel">
+  <h2 class="mt-0">Winners</h2>
+  <div class="table-wrap"><table>
+    <tbody>{% for a in res.body.awards %}<tr>
+      <td><strong>{{ a.name }}</strong></td>
+      <td><a href="/projects/{{ a.project }}">{{ a.title }}</a>{% if a.overrode_suggestion %} <span class="tag">organizers chose this over the top-ranked candidate</span>{% endif %}</td>
+      <td class="num small muted">{% if a.p_beats_rival is not none %}{{ a.p_beats_rival | pct }} sure it beats the closest rival{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>How to read this</h2>
+  {% include "_method.html" %}
+</div>
+<div class="panel">
+  <h2>Ranking</h2>
+  {% include "_ranking.html" %}
+</div>
+{% endblock %}

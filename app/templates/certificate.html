@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Certificate · {{ body.team.name }}{% endblock %}
+{% block content %}
+<div class="actions no-print mb-m">
+  <a class="btn" href="/events/{{ event.id }}/records">All records</a>
+  <a class="btn" href="/records/{{ record.id }}.json">Download envelope</a>
+  <span class="muted small">Print this page for a paper copy.</span>
+</div>
+<article class="cert">
+  <div class="kicker">CERTIFICATE OF PARTICIPATION</div>
+  <h1>{{ body.team.name }}</h1>
+  <p class="who">{{ body.team.members | join(", ") }}</p>
+  {% if body.awards %}<p class="award">Winner: {{ body.awards | join(", ") }}</p>{% endif %}
+  <dl>
+    <dt>Event</dt><dd>{{ body.event.name }}</dd>
+    <dt>Project</dt><dd>{{ body.project.title }}</dd>
+    {% if body.placement %}
+    <dt>Placement</dt><dd>{{ body.placement.rank }} of {{ body.placement.of }}</dd>
+    <dt>Adjusted score</dt><dd>{{ body.placement.adjusted }} (90% interval {{ body.placement.interval90[0] }} to {{ body.placement.interval90[1] }})</dd>
+    {% endif %}
+    <dt>Issued</dt><dd>{{ body.issued_at | ts }}</dd>
+    <dt>Record</dt><dd class="mono">{{ record.id }}</dd>
+  </dl>
+  <p class="small">{% if check.ok %}<span class="tag ok">Signature valid</span>{% else %}<span class="tag bad">{{ check.reason }}</span>{% endif %}
+    Signed by {{ body.issuer }} with key <code>{{ record.key_id }}</code>. Verify at {{ body.issuer }}/verify with the envelope from this record.</p>
+</article>
+{% endblock %}

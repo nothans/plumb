@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Audit log · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'audit' %}{% include "organizer/_nav.html" %}
+<form class="filters" method="get">
+  <label>Action starts with<input type="text" name="action" value="{{ action }}" placeholder="review, vote, project, event..."></label>
+  <button type="submit">Filter</button>
+  {% if action %}<a class="btn" href="/events/{{ event.id }}/manage/audit">Clear</a>{% endif %}
+  <span class="small">{% if chain.ok %}<span class="tag ok">Chain intact</span>{% else %}<span class="tag bad">Chain broken at {{ chain.broken_at }}</span>{% endif %}</span>
+</form>
+<div class="panel table-wrap">
+<table>
+  <thead><tr><th class="num">#</th><th>When</th><th>Who</th><th>What</th><th>Details</th><th>Hash</th></tr></thead>
+  <tbody>{% for e in entries %}
+    <tr>
+      <td class="num">{{ e.seq }}</td>
+      <td class="nowrap small">{{ e.at | ts }}</td>
+      <td class="small">{{ e.actor_name or 'system' }}</td>
+      <td><code>{{ e.action }}</code><br><span class="small muted mono">{{ e.subject }}</span></td>
+      <td class="small">
+        {% if e.detail_obj.get('from') is mapping and e.detail_obj.get('to') is mapping %}
+          {% for k, v in e.detail_obj['to'].items() %}<div>{{ k }} {{ e.detail_obj['from'].get(k, '') }} &rarr; {{ v }}</div>{% endfor %}
+        {% elif e.detail_obj.get('changed') is mapping %}
+          {% for k, v in e.detail_obj['changed'].items() %}<div>{{ k }}: {{ v['from'] or 'none' }} &rarr; {{ v['to'] or 'none' }}</div>{% endfor %}
+        {% else %}
+          {% for k, v in e.detail_obj.items() %}<div><span class="muted">{{ k }}:</span> {{ v if v is string else (v | tojson) }}</div>{% endfor %}
+        {% endif %}
+      </td>
+      <td><span class="hash short" title="{{ e.hash }}">{{ e.hash[:12] }}</span></td>
+    </tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing matches.</td></tr>{% endfor %}</tbody>
+</table>
+{% if entries | length >= 200 %}<p class="mt-s"><a class="btn" href="?before={{ entries[-1].seq }}&action={{ action }}">Older entries</a></p>{% endif %}
+</div>
+{% endblock %}

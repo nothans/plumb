@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}API{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <h1>API</h1>
+  <p>Everything the web pages do, as JSON. Authenticate with <code>Authorization: Bearer &lt;token&gt;</code> (make one on <a href="/me">your page</a>) or your session cookie. The OpenAPI 3 document is at <a href="/api/openapi.json">/api/openapi.json</a>. Errors are <code>{"error": "..."}</code> with a meaningful status: 401 not logged in, 403 not allowed, 404 not found, 409 not now (a deadline or a lock), 422 invalid input, 429 slow down.</p>
+</div></div>
+<div class="panel">
+  <h2>Webhooks</h2>
+  <p>An organizer can register a URL per event. Every audited action in that event (submissions, reviews, assignments, votes, publication, and the rest) is POSTed to it in order, as JSON, with <code>X-Plumb-Signature: sha256=&lt;hex HMAC-SHA256 of the body with the webhook secret&gt;</code>. Failed deliveries retry with backoff.</p>
+</div>
+<div class="panel table-wrap">
+<table>
+  <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+  <tbody>{% for op in ops %}
+    <tr><td class="mono">{{ op.method }}</td><td class="mono">{{ op.path }}</td><td>{{ op.doc or op.summary }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+</div>
+{% endblock %}

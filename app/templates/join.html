@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Join {{ team.name }}{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Join {{ team.name }}</h1>
+  <p>Members: {% for m in members %}{{ m.name }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  {% if me %}
+  <form method="post" action="/join/{{ code }}">{{ csrf_field() }}<button class="primary" type="submit">Join as {{ me.name }}</button></form>
+  {% else %}
+  <p>Log in or create an account first; you will come back here.</p>
+  <div class="actions"><a class="btn primary" href="/signup?next=/join/{{ code }}">Sign up</a><a class="btn" href="/login?next=/join/{{ code }}">Log in</a></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <h1>Create an account</h1>
+  <p class="muted">Judges and organizers: open the invitation link you were sent instead, so the role comes with the account.</p>
+  <form class="stack mt-m" method="post" action="/signup">{{ csrf_field() }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Name<input type="text" name="name" value="{{ form.name or '' }}" autocomplete="name" maxlength="100" required autofocus></label>
+    <label>Email<input type="email" name="email" value="{{ form.email or '' }}" autocomplete="email" required></label>
+    <label>Password <span class="hint">At least 10 characters.</span><input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+    <div class="actions"><button class="primary" type="submit">Create account</button><a href="/login?next={{ next | urlencode }}">I have an account</a></div>
+  </form>
+</div>
+{% endblock %}

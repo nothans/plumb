@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set error_page = true %}
+{% block title %}{{ status }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <h1>{% if status == 404 %}Not found{% elif status == 403 %}Not allowed{% elif status == 409 %}Not now{% elif status == 429 %}Slow down{% else %}That did not work{% endif %}</h1>
+  <p class="muted">{{ message | capitalize }}.</p>
+  <div class="actions"><a class="btn" href="/">Events</a></div>
+</div>
+{% endblock %}

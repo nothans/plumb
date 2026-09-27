@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}{{ project.title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a> / <a href="/projects?event={{ event.id }}">Gallery</a></div>
+    <h1>{{ project.title }}</h1>
+    {% if project.summary %}<p>{{ project.summary }}</p>{% endif %}
+    <div class="actions mt-s">
+      {% if project.track_name %}<span class="tag">{{ project.track_name }}</span>{% endif %}
+      {% if project.status == 'draft' %}<span class="tag warn">Draft, visible to your team only</span>{% endif %}
+      {% if project.duplicate_of %}<span class="tag bad">Duplicate of <a href="/projects/{{ project.duplicate_of }}">{{ project.duplicate_of }}</a></span>{% endif %}
+      {% if project.disqualified_reason %}<span class="tag bad">Disqualified</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    {% if is_member and phase.submissions == 'open' %}
+      <a class="btn primary" href="/projects/{{ project.id }}/edit">Edit</a>
+      {% if project.status == 'submitted' %}
+      <form class="inline" method="post" action="/projects/{{ project.id }}/unsubmit">{{ csrf_field() }}<button type="submit">Move back to draft</button></form>
+      {% endif %}
+    {% endif %}
+    {% if can_vote %}
+      <form class="inline" method="post" action="/projects/{{ project.id }}/vote">{{ csrf_field() }}
+        {% if voted %}<input type="hidden" name="action" value="withdraw"><button type="submit">Withdraw your vote</button>
+        {% else %}<button class="primary" type="submit">Vote for this</button>{% endif %}
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="split">
+  <div>
+    <div class="panel">
+      {% if project.description %}<p>{{ project.description }}</p>{% elif is_member %}<p class="muted">No description yet. <a href="/projects/{{ project.id }}/edit">Add one</a> so judges have more to go on.</p>{% endif %}
+      <div class="actions">
+        {% if project.repo_url %}<a class="btn" href="{{ project.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}
+        {% if project.demo_url %}<a class="btn" href="{{ project.demo_url }}" rel="nofollow noopener" target="_blank">Demo</a>{% endif %}
+      </div>
+    </div>
+
+    <section class="panel" id="comments">
+      <h2>Comments</h2>
+      {% for c in comments %}
+        <div class="{{ 'muted' if c.hidden_at }}">
+          <p class="mb-0"><strong>{{ c.author }}</strong> <span class="muted small">{{ c.created_at | ts }}</span>
+          {% if c.hidden_at %}<span class="tag bad">hidden: {{ c.hidden_reason }}</span>{% endif %}</p>
+          <p>{{ c.body }}</p>
+          {% if is_organizer and not c.hidden_at %}
+          <form class="row" method="post" action="/comments/{{ c.id }}/hide">{{ csrf_field() }}
+            <label>Reason<input type="text" name="reason" placeholder="spam, off-topic..." maxlength="300"></label>
+            <button class="danger" type="submit">Hide</button>
+          </form>
+          {% endif %}
+        </div>
+        <hr class="rule">
+      {% else %}
+        <p class="muted">No comments yet.</p>
+      {% endfor %}
+      {% if project.status == 'submitted' %}
+        {% if me %}
+        <form class="stack" method="post" action="/projects/{{ project.id }}/comments">{{ csrf_field() }}
+          <label>Add a comment<textarea name="body" maxlength="2000" required></textarea></label>
+          <div><button class="primary" type="submit">Post comment</button></div>
+        </form>
+        {% else %}<p><a href="/login?next=/projects/{{ project.id }}">Log in</a> to comment.</p>{% endif %}
+      {% endif %}
+    </section>
+  </div>
+  <aside>
+    <div class="panel">
+      <h2>Team</h2>
+      <p><strong>{{ project.team_name }}</strong></p>
+      <ul>{% for m in members %}<li>{{ m.name }}</li>{% endfor %}</ul>
+      <p class="muted small">{% if project.submitted_at %}Submitted {{ project.submitted_at | ts }}.{% endif %} Last edited {{ project.updated_at | ts }}.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

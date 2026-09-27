@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}{% if project %}Edit {{ project.title }}{% else %}New project{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>{% if project %}Edit {{ project.title }}{% else %}Your project{% endif %}</h1>
+  <p>Submissions close <strong>{{ event.submissions_close | ts }}</strong>. You can edit until then; after that nothing changes.</p>
+</div></div>
+<div class="panel">
+<form class="stack" method="post" action="{% if project %}/projects/{{ project.id }}/edit{% else %}/events/{{ event.id }}/projects/new{% endif %}">{{ csrf_field() }}
+  <label>Title<input type="text" name="title" value="{{ form.title or '' }}" maxlength="120" required></label>
+  <label>One-line summary <span class="hint">Shown in the gallery. Required to submit.</span><input type="text" name="summary" value="{{ form.summary or '' }}" maxlength="280"></label>
+  {% if tracks %}
+  <label>Track
+    <select name="track_id">
+      <option value="">Choose a track</option>
+      {% for t in tracks %}<option value="{{ t.id }}" {% if form.track_id == t.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label>Description<textarea name="description" maxlength="10000">{{ form.description or '' }}</textarea></label>
+  <div class="row">
+    <label>Repository URL<input type="url" name="repo_url" value="{{ form.repo_url or '' }}" placeholder="https://"></label>
+    <label>Demo URL<input type="url" name="demo_url" value="{{ form.demo_url or '' }}" placeholder="https://"></label>
+  </div>
+  <div class="actions">
+    {% if not project or project.status == 'draft' %}
+      <button class="primary" type="submit" name="action" value="submit">Submit</button>
+      <button type="submit" name="action" value="draft">Save draft</button>
+    {% else %}
+      <button class="primary" type="submit" name="action" value="submit">Save changes</button>
+    {% endif %}
+  </div>
+</form>
+</div>
+{% endblock %}

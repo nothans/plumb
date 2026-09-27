@@ -1,0 +1,3241 @@
+{
+  "components": {
+    "schemas": {
+      "AssignmentIn": {
+        "properties": {
+          "judge_id": {
+            "title": "Judge Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "judge_id",
+          "project_id"
+        ],
+        "title": "AssignmentIn",
+        "type": "object"
+      },
+      "CommentIn": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "CommentIn",
+        "type": "object"
+      },
+      "ComparisonIn": {
+        "properties": {
+          "a": {
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "title": "B",
+            "type": "string"
+          },
+          "winner": {
+            "description": "a or b's project id",
+            "title": "Winner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "winner"
+        ],
+        "title": "ComparisonIn",
+        "type": "object"
+      },
+      "DisqualifyIn": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null to reinstate",
+            "title": "Reason"
+          }
+        },
+        "title": "DisqualifyIn",
+        "type": "object"
+      },
+      "DuplicateIn": {
+        "properties": {
+          "drop": {
+            "title": "Drop",
+            "type": "string"
+          },
+          "keep": {
+            "title": "Keep",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keep",
+          "drop"
+        ],
+        "title": "DuplicateIn",
+        "type": "object"
+      },
+      "EnvelopeIn": {
+        "properties": {
+          "key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "payload": {
+            "title": "Payload",
+            "type": "string"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payload",
+          "signature"
+        ],
+        "title": "EnvelopeIn",
+        "type": "object"
+      },
+      "EventIn": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "judging_close": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judging Close"
+          },
+          "max_team_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Team Size"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "prizes": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prizes"
+          },
+          "reviews_per_project": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviews Per Project"
+          },
+          "submissions_close": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submissions Close"
+          },
+          "submissions_open": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 8601, UTC",
+            "title": "Submissions Open"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          },
+          "tracks": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "votes_per_voter": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Votes Per Voter"
+          },
+          "voting_close": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voting Close"
+          },
+          "voting_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "accounts",
+                  "participants"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voting Mode"
+          },
+          "voting_open": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voting Open"
+          }
+        },
+        "title": "EventIn",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HideIn": {
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "HideIn",
+        "type": "object"
+      },
+      "InviteIn": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "default": "judge",
+            "enum": [
+              "judge",
+              "organizer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InviteIn",
+        "type": "object"
+      },
+      "JoinIn": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "JoinIn",
+        "type": "object"
+      },
+      "JudgeTracksIn": {
+        "properties": {
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "track_ids"
+        ],
+        "title": "JudgeTracksIn",
+        "type": "object"
+      },
+      "ProjectIn": {
+        "properties": {
+          "demo_url": {
+            "default": "",
+            "title": "Demo Url",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "repo_url": {
+            "default": "",
+            "title": "Repo Url",
+            "type": "string"
+          },
+          "submit": {
+            "default": false,
+            "title": "Submit",
+            "type": "boolean"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ProjectIn",
+        "type": "object"
+      },
+      "PublishIn": {
+        "properties": {
+          "awards": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "prize id -> project id; omitted prizes get the suggested winner, an empty string leaves a prize unawarded",
+            "title": "Awards"
+          }
+        },
+        "title": "PublishIn",
+        "type": "object"
+      },
+      "ReviewIn": {
+        "properties": {
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "criterion key -> score",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "title": "ReviewIn",
+        "type": "object"
+      },
+      "RubricIn": {
+        "properties": {
+          "weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "criterion key -> weight",
+            "title": "Weights",
+            "type": "object"
+          }
+        },
+        "required": [
+          "weights"
+        ],
+        "title": "RubricIn",
+        "type": "object"
+      },
+      "TeamIn": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TeamIn",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VoidVotesIn": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "voter_id": {
+            "title": "Voter Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voter_id",
+          "reason"
+        ],
+        "title": "VoidVotesIn",
+        "type": "object"
+      },
+      "WebhookIn": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "WebhookIn",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "description": "An API token from /me. The session cookie works too.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "summary": "A hackathon submission and judging portal whose results you can check.",
+    "title": "Plumb",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/judge/scores": {
+      "get": {
+        "description": "A judge's own reviews. Asking for another judge's (?judge=ID) needs\norganizer rights on that judge's events; a judge gets 403.",
+        "operationId": "judge_scores_api_judge_scores_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "judge",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Judge"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Judge Scores",
+        "tags": [
+          "judging"
+        ]
+      }
+    },
+    "/api/v1/comments/{comment_id}/hide": {
+      "post": {
+        "description": "Hide a comment with a reason (organizers). Nothing is deleted.",
+        "operationId": "hide_comment_api_v1_comments__comment_id__hide_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Hide Comment",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "All events, with their phase, tracks, prizes and rubric.",
+        "operationId": "list_events_api_v1_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Events",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Create an event (admins). The creator becomes its first organizer.",
+        "operationId": "create_event_api_v1_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Event",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/import": {
+      "post": {
+        "description": "Body: a fixture-shaped event document (the format GET .../export returns).",
+        "operationId": "import_event_api_v1_events_import_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Event",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}": {
+      "get": {
+        "description": "One event, plus the caller's roles in it.",
+        "operationId": "get_event_api_v1_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Event",
+        "tags": [
+          "v1"
+        ]
+      },
+      "patch": {
+        "description": "Change an event's settings (organizers). Schedule changes that would reopen decided things are refused.",
+        "operationId": "update_event_api_v1_events__event_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Event",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/abuse": {
+      "get": {
+        "description": "Voting patterns worth a human look (organizers).",
+        "operationId": "abuse_api_v1_events__event_id__abuse_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Abuse",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/assignments": {
+      "delete": {
+        "description": "Remove an assignment that has no review yet (organizers).",
+        "operationId": "remove_assignment_api_v1_events__event_id__assignments_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Assignment",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Assign one judge to one project (organizers); conflicts of interest are refused.",
+        "operationId": "add_assignment_api_v1_events__event_id__assignments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Assignment",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/assignments/auto": {
+      "post": {
+        "description": "Bring every project up to the review target, respecting tracks and conflicts of interest.",
+        "operationId": "auto_assign_api_v1_events__event_id__assignments_auto_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Auto Assign",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/audit": {
+      "get": {
+        "description": "The event's audit entries, newest first, with a chain verification result (organizers).",
+        "operationId": "audit_log_api_v1_events__event_id__audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Audit Log",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/awards/suggested": {
+      "get": {
+        "description": "The winner Plumb would pick for each prize, with how sure the model is.",
+        "operationId": "suggested_awards_api_v1_events__event_id__awards_suggested_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Suggested Awards",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/ballot": {
+      "get": {
+        "description": "The caller's ballot, shuffled for them alone, with votes left.",
+        "operationId": "ballot_api_v1_events__event_id__ballot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ballot",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/compare/next": {
+      "get": {
+        "description": "The pair this judge should compare next (least certain order), or null when done.",
+        "operationId": "compare_next_api_v1_events__event_id__compare_next_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compare Next",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/comparisons": {
+      "post": {
+        "description": "Record which of two assigned projects the calling judge thinks is better.",
+        "operationId": "compare_api_v1_events__event_id__comparisons_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComparisonIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compare",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/duplicates": {
+      "get": {
+        "description": "Pairs of submissions that share a team, repository or title (organizers).",
+        "operationId": "duplicates_api_v1_events__event_id__duplicates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Duplicates",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Choose which of a duplicate pair counts (organizers, before publication).",
+        "operationId": "resolve_duplicate_api_v1_events__event_id__duplicates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resolve Duplicate",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/export": {
+      "get": {
+        "description": "The whole event in the fixture format plus a plumb block; importable into another Plumb.",
+        "operationId": "export_event_api_v1_events__event_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Event",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/invitations": {
+      "post": {
+        "description": "Create a single-use invitation link for a judge or organizer (organizers).",
+        "operationId": "invite_api_v1_events__event_id__invitations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Invite",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/judges": {
+      "get": {
+        "description": "Judges of the event with their tracks and progress (organizers).",
+        "operationId": "judges_api_v1_events__event_id__judges_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Judges",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/judges/{judge_id}/tracks": {
+      "put": {
+        "description": "Set which tracks a judge covers (organizers).",
+        "operationId": "judge_tracks_api_v1_events__event_id__judges__judge_id__tracks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "judge_id",
+            "required": true,
+            "schema": {
+              "title": "Judge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgeTracksIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Judge Tracks",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/pairwise": {
+      "get": {
+        "description": "Bradley-Terry strengths from direct comparisons and from preferences implied by scores.",
+        "operationId": "pairwise_results_api_v1_events__event_id__pairwise_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pairwise Results",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/progress": {
+      "get": {
+        "description": "Review coverage per project and per judge (organizers).",
+        "operationId": "progress_api_v1_events__event_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Progress",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/project": {
+      "put": {
+        "description": "Create or update your team's entry. submit=true makes it public.",
+        "operationId": "save_project_api_v1_events__event_id__project_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Project",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/publish": {
+      "post": {
+        "description": "Sign and freeze the results, award prizes, issue judge records and team certificates. Final.",
+        "operationId": "publish_api_v1_events__event_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PublishIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Data"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Publish",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/queue": {
+      "get": {
+        "description": "The calling judge's assigned projects, unreviewed first.",
+        "operationId": "judge_queue_api_v1_events__event_id__queue_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Judge Queue",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/records": {
+      "get": {
+        "description": "Every signed record of the event, as verifiable envelopes.",
+        "operationId": "list_records_api_v1_events__event_id__records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Records",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/results": {
+      "get": {
+        "description": "The normalized ranking with intervals: organizers any time, everyone after publication.",
+        "operationId": "results_api_v1_events__event_id__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Results",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/rubric": {
+      "put": {
+        "description": "Reweight the rubric (organizers, before publication).",
+        "operationId": "rubric_api_v1_events__event_id__rubric_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RubricIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rubric",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/team": {
+      "get": {
+        "description": "The caller's team in this event.",
+        "operationId": "my_team_api_v1_events__event_id__team_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Team",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/teams": {
+      "post": {
+        "description": "Start a team in an event; the caller is its first member.",
+        "operationId": "create_team_api_v1_events__event_id__teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Team",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/void-votes": {
+      "post": {
+        "description": "Remove every vote of one account, with a reason (organizers).",
+        "operationId": "void_votes_api_v1_events__event_id__void_votes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidVotesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Void Votes",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/votes": {
+      "get": {
+        "description": "Vote counts, available to everyone only after voting closes.",
+        "operationId": "tallies_api_v1_events__event_id__votes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Tallies",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/webhooks": {
+      "get": {
+        "description": "This event's webhooks with the outcome of each one's latest delivery.",
+        "operationId": "list_webhooks_api_v1_events__event_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Webhooks",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Every audited action in this event, from now on, is POSTed to url as\nJSON with an X-Plumb-Signature: sha256=<hex HMAC of the body> header.\nThe secret is shown once.",
+        "operationId": "create_webhook_api_v1_events__event_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Webhook",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/webhooks/{hook_id}": {
+      "delete": {
+        "description": "Remove a webhook (organizers).",
+        "operationId": "delete_webhook_api_v1_events__event_id__webhooks__hook_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hook_id",
+            "required": true,
+            "schema": {
+              "title": "Hook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Webhook",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/invitations/{token}/accept": {
+      "post": {
+        "description": "Accept an invitation as the logged-in account it was made for.",
+        "operationId": "accept_api_v1_invitations__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "description": "Submitted projects; search with q, filter by event and track.",
+        "operationId": "gallery_api_v1_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Track"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Gallery",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}": {
+      "get": {
+        "description": "One project. Drafts are visible to their team and organizers only.",
+        "operationId": "get_project_api_v1_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/comments": {
+      "get": {
+        "description": "Comments on a project (organizers also see hidden ones).",
+        "operationId": "list_comments_api_v1_projects__project_id__comments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Comments",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Comment on a submitted project.",
+        "operationId": "add_comment_api_v1_projects__project_id__comments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Comment",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/disqualify": {
+      "post": {
+        "description": "Disqualify with a reason, or reinstate with a null reason (organizers, before publication).",
+        "operationId": "disqualify_api_v1_projects__project_id__disqualify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisqualifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disqualify",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review": {
+      "put": {
+        "description": "Create or update the caller's review of an assigned project while judging is open.",
+        "operationId": "save_review_api_v1_projects__project_id__review_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Review",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/unsubmit": {
+      "post": {
+        "description": "Move the caller's team project back to draft (until submissions close).",
+        "operationId": "unsubmit_api_v1_projects__project_id__unsubmit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unsubmit",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/vote": {
+      "delete": {
+        "description": "Withdraw a vote while voting is open.",
+        "operationId": "unvote_api_v1_projects__project_id__vote_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unvote",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Vote for a project while voting is open.",
+        "operationId": "vote_api_v1_projects__project_id__vote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Vote",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/teams/join": {
+      "post": {
+        "description": "Join a team with its invite code.",
+        "operationId": "join_team_api_v1_teams_join_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JoinIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Join Team",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/leave": {
+      "post": {
+        "description": "Leave a team (until submissions close).",
+        "operationId": "leave_team_api_v1_teams__team_id__leave_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Leave Team",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/verify": {
+      "post": {
+        "description": "Check a record envelope against this portal's signing key.",
+        "operationId": "verify_api_v1_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvelopeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify",
+        "tags": [
+          "v1"
+        ]
+      }
+    }
+  }
+}

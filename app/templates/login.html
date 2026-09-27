@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  <h1>Log in</h1>
+  <form class="stack mt-m" method="post" action="/login">{{ csrf_field() }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Email<input type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus></label>
+    <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+    <div class="actions"><button class="primary" type="submit">Log in</button><a href="/signup?next={{ next | urlencode }}">Create an account</a></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Judges · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'judges' %}{% include "organizer/_nav.html" %}
+<div class="split">
+  <div class="panel">
+    <h2>Judges ({{ judges | length }})</h2>
+    <p class="small muted">Tracks limit what automatic assignment gives a judge. A judge with no tracks can be assigned anything.</p>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Judge</th><th class="num">Done</th><th>Tracks</th></tr></thead>
+      <tbody>{% for j in judges %}
+        <tr>
+          <td><strong>{{ j.name }}</strong><br><span class="small muted">{{ j.email }}</span></td>
+          <td class="num">{{ j.reviewed }} / {{ j.assigned }}</td>
+          <td>
+            <form method="post" action="/events/{{ event.id }}/manage/judges/{{ j.id }}/tracks">{{ csrf_field() }}
+              <div class="checks">{% for t in tracks %}<label><input type="checkbox" name="track" value="{{ t.id }}" {% if t.id in j.tracks %}checked{% endif %}>{{ t.name }}</label>{% endfor %}</div>
+              <button class="mt-s" type="submit">Save tracks</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}<tr><td colspan="3" class="muted">No judges yet. Invite some.</td></tr>{% endfor %}</tbody>
+    </table>
+    </div>
+  </div>
+  <aside>
+    <div class="panel">
+      <h2>Invite</h2>
+      {% if invite_link %}
+        <div class="notice" role="status">Send this link to {{ invite_email }}. It works once, for that address only. Plumb does not send email, so nothing has been sent yet.</div>
+        <input type="text" readonly value="{{ invite_link }}" aria-label="Invitation link">
+        <hr class="rule">
+      {% endif %}
+      <form class="stack" method="post" action="/events/{{ event.id }}/manage/invite">{{ csrf_field() }}
+        <label>Email<input type="email" name="email" required></label>
+        <label>Role
+          <select name="role"><option value="judge">Judge</option><option value="organizer">Organizer</option></select>
+        </label>
+        <div><button class="primary" type="submit">Create invitation link</button></div>
+      </form>
+      {% if pending %}
+      <h3>Not yet accepted</h3>
+      <ul class="small">{% for p in pending %}<li>{{ p.email }} ({{ p.role }}), {{ p.created_at | ts }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

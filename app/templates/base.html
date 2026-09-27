@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Plumb{% endblock %} · Plumb</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/plumb.svg" type="image/svg+xml">
+{% block head_extra %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="/">{% include "_logo.html" %}Plumb</a>
+    <nav class="nav" aria-label="Main">
+      <a href="/" {% if request.url.path == "/" %}aria-current="page"{% endif %}>Events</a>
+      {% set p = request.url.path %}
+      <a href="/projects" {% if (p == "/projects" or (p.startswith("/projects/") and p.count("/") == 2)) and not error_page %}aria-current="page"{% endif %}>Gallery</a>
+      <a href="/verify" {% if request.url.path == "/verify" %}aria-current="page"{% endif %}>Verify a record</a>
+      <a href="/api" {% if request.url.path == "/api" %}aria-current="page"{% endif %}>API</a>
+    </nav>
+    <div class="who">
+      {% if me %}
+        <a href="/me">{{ me.name }}</a>{% if me.is_admin %} <span class="tag">admin</span>{% endif %}
+        <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link-btn" type="submit">Log out</button></form>
+      {% else %}
+        <a href="/login{% if request.url.path not in ('/login', '/signup') %}?next={{ request.url.path }}{% endif %}">Log in</a>
+        <a class="btn primary" href="/signup">Sign up</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+{% if request.app.state.settings.demo %}
+<div class="demo-banner" role="note">Demo mode: the test logins in the README are public. Do not run a real event with this configuration.</div>
+{% endif %}
+<main>
+  {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer>Plumb is open source under the MIT license. Every state change is in a hash-chained audit log; published results are signed. <a href="/.well-known/plumb-key.json">Signing key</a>.</footer>
+</body>
+</html>

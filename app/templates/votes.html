@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Community vote · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Community vote</h1>
+  <p>{{ turnout.votes }} votes from {{ turnout.voters }} voters. Voting closed {{ event.voting_close | ts }}.</p>
+</div></div>
+<div class="panel table-wrap">
+<table>
+  <thead><tr><th class="num">#</th><th>Project</th><th>Team</th><th class="num">Votes</th></tr></thead>
+  <tbody>{% for t in tallies %}<tr><td class="num">{{ loop.index }}</td><td><a href="/projects/{{ t.id }}">{{ t.title }}</a></td><td>{{ t.team_name }}</td><td class="num">{{ t.votes }}</td></tr>{% endfor %}</tbody>
+</table>
+</div>
+{% endblock %}

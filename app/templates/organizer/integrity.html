@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Integrity · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'integrity' %}{% include "organizer/_nav.html" %}
+
+<div class="panel">
+  <h2>Audit log</h2>
+  {% if chain.ok %}
+    <p><span class="tag ok">Intact</span> All {{ chain.checked }} entries recompute to their stored hashes, each chained to the one before. Head: entry {{ head.seq }}, <span class="hash">{{ head.hash }}</span></p>
+  {% else %}
+    <div class="alert">The chain breaks at entry {{ chain.broken_at }}: that row, or one before it, was changed or deleted outside Plumb. Entries after it cannot be trusted until this is explained.</div>
+  {% endif %}
+  <p class="small muted">The database refuses updates and deletes on the log. Published results carry the head hash in a signed record, so history before publication cannot be rewritten without the signature failing to match.</p>
+</div>
+
+<div class="panel">
+  <h2>Duplicate submissions</h2>
+  {% for d in duplicates %}
+    <div class="{{ 'muted' if d.resolved }}">
+      <p class="mb-0"><a href="/projects/{{ d.first.id }}">{{ d.first.title }}</a> ({{ d.first.team_name }}, {{ d.first.submitted_at | ts }}) and
+      <a href="/projects/{{ d.second.id }}">{{ d.second.title }}</a> ({{ d.second.team_name }}, {{ d.second.submitted_at | ts }})</p>
+      <p class="small">{{ d.reasons | join(", ") }}.
+        {% if d.second.duplicate_of == d.first.id %}<span class="tag">the {{ d.second.submitted_at | ts }} entry is the duplicate</span>{% elif d.first.duplicate_of == d.second.id %}<span class="tag">the {{ d.first.submitted_at | ts }} entry is the duplicate</span>{% else %}<span class="tag warn">undecided</span>{% endif %}</p>
+      {% if not frozen %}
+      <div class="actions">
+        <form class="inline" method="post" action="/events/{{ event.id }}/manage/duplicates">{{ csrf_field() }}<input type="hidden" name="keep" value="{{ d.first.id }}"><input type="hidden" name="drop" value="{{ d.second.id }}"><button type="submit" {% if d.second.duplicate_of == d.first.id %}disabled{% endif %}>Keep the {{ d.first.submitted_at | ts }} entry</button></form>
+        <form class="inline" method="post" action="/events/{{ event.id }}/manage/duplicates">{{ csrf_field() }}<input type="hidden" name="keep" value="{{ d.second.id }}"><input type="hidden" name="drop" value="{{ d.first.id }}"><button type="submit" {% if d.first.duplicate_of == d.second.id %}disabled{% endif %}>Keep the {{ d.second.submitted_at | ts }} entry</button></form>
+      </div>
+      {% endif %}
+      <hr class="rule">
+    </div>
+  {% else %}<p class="muted">No two submissions share a team, a repository or a title.</p>{% endfor %}
+  <p class="small muted">The entry you drop leaves the gallery and the ranking but stays in the database and exports. Its reviews are not moved onto the kept entry: a judge scored what they saw.</p>
+</div>
+
+{% if frozen %}<div class="alert warn">Results are published, so duplicates and disqualifications are frozen. They match the signed record.</div>{% endif %}
+<div class="panel">
+  <h2>Disqualify a project</h2>
+  {% if disqualified %}
+  <ul>{% for p in disqualified %}<li><a href="/projects/{{ p.id }}">{{ p.title }}</a>: {{ p.disqualified_reason }}
+    {% if not frozen %}<form class="inline" method="post" action="/projects/{{ p.id }}/disqualify">{{ csrf_field() }}<input type="hidden" name="action" value="restore"><button class="link-btn" type="submit">reinstate</button></form>{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">None. A disqualified project leaves the gallery, the ballot and the ranking, and the reason goes in the audit log.</p>{% endif %}
+  {% if not frozen %}
+  <form class="row" method="post" action="/events/{{ event.id }}/manage/disqualify">{{ csrf_field() }}
+    <label>Project
+      <select name="project_id" required><option value="" selected disabled>Choose a project</option>
+        {% for p in live_projects %}<option value="{{ p.id }}">{{ p.title }} ({{ p.team_name }})</option>{% endfor %}
+      </select></label>
+    <label>Reason<input type="text" name="reason" maxlength="300" required></label>
+    <button class="danger" type="submit">Disqualify</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Community vote signals</h2>
+  <p class="small muted">Patterns worth a human look. None of them blocks a vote on its own; a person decides, and the decision goes in the audit log.</p>
+  <h3>Several accounts voting from one address</h3>
+  {% if signals.shared_ip %}
+  <div class="table-wrap"><table><thead><tr><th>Address</th><th class="num">Accounts</th><th>Who</th></tr></thead>
+  <tbody>{% for r in signals.shared_ip %}<tr><td class="mono">{{ r.ip }}</td><td class="num">{{ r.voters }}</td><td class="small">{{ r.voter_ids | replace(",", ", ") }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="muted">None.</p>{% endif %}
+  <h3>Accounts created after voting opened</h3>
+  {% if signals.fresh_accounts %}
+  <table><thead><tr><th>Account</th><th>Created</th><th class="num">Votes</th><th></th></tr></thead>
+  <tbody>{% for r in signals.fresh_accounts %}<tr><td>{{ r.email }}</td><td>{{ r.created_at | ts }}</td><td class="num">{{ r.votes }}</td>
+    <td><form class="row tight" method="post" action="/events/{{ event.id }}/manage/void-votes">{{ csrf_field() }}<input type="hidden" name="voter_id" value="{{ r.id }}"><input type="text" name="reason" placeholder="reason" required aria-label="Reason"><button class="danger" type="submit">Void votes</button></form></td></tr>{% endfor %}</tbody></table>
+  {% else %}<p class="muted">None.</p>{% endif %}
+  <h3>Projects drawing votes from new accounts</h3>
+  {% if signals.concentrated %}
+  <ul>{% for r in signals.concentrated %}<li>{{ r.title }}: {{ r.from_new_accounts }} of {{ r.votes }} votes from accounts made after voting opened.</li>{% endfor %}</ul>
+  {% else %}<p class="muted">None.</p>{% endif %}
+  <h3>Rate limits since the last restart</h3>
+  {% if refused %}<ul>{% for k, v in refused.items() %}<li>{{ k }}: {{ v }} refused</li>{% endfor %}</ul>{% else %}<p class="muted">Nothing refused.</p>{% endif %}
+  <p class="small muted">{{ signals.hidden_comments }} comment{{ '' if signals.hidden_comments == 1 else 's' }} hidden by organizers.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Review queue · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>Your review queue</h1>
+  <p>{{ done }} of {{ rows | length }} reviewed.
+  {% if phase.judging_open %}You can edit a review until results are published{% if event.judging_close %} or {{ event.judging_close | ts }}{% endif %}.
+  {% elif phase.results_published %}Results are published; reviews are locked.
+  {% else %}Judging opens when submissions close, {{ event.submissions_close | ts }}.{% endif %}</p>
+  <progress max="{{ [rows | length, 1] | max }}" value="{{ done }}" aria-label="Reviews done"></progress>
+</div>
+{% if event.pairwise and phase.judging_open and rows | length > 1 %}<div class="actions"><a class="btn" href="/events/{{ event.id }}/compare">Compare pairs</a></div>{% endif %}
+</div>
+<div class="panel">
+<p class="muted small">You see only your own reviews. Other judges' scores are never shown to you, and results stay hidden until the organizers publish them.</p>
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Project</th><th>Track</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for r in rows %}
+    <tr>
+      <td><a href="/projects/{{ r.id }}">{{ r.title }}</a><br><span class="muted small">{{ r.team_name }}</span></td>
+      <td>{{ r.track_name or '' }}</td>
+      <td>{% if r.review_id %}<span class="tag ok">Reviewed {{ r.reviewed_at | ts }}</span>{% else %}<span class="tag warn">To do</span>{% endif %}</td>
+      <td>{% if phase.judging_open %}<a class="btn {{ '' if r.review_id else 'primary' }}" href="/projects/{{ r.id }}/review">{{ 'Edit' if r.review_id else 'Review' }}</a>{% endif %}</td>
+    </tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty"><p>Nothing assigned to you yet. The organizers assign projects once submissions close.</p></div>
+{% endif %}
+</div>
+{% endblock %}

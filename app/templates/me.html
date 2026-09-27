@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field, phase_tags with context %}
+{% block title %}Your events{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ me.name }}</h1><p>{{ me.email }}</p></div></div>
+<div class="panel">
+  <h2>Your events</h2>
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Event</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr>
+        <td><a href="/events/{{ r.event.id }}">{{ r.event.name }}</a>{% if r.team %}<br><span class="small muted">Team {{ r.team.name }}</span>{% endif %}</td>
+        <td>{% for role in r.roles | sort if role != 'admin' %}<span class="tag">{{ role }}</span> {% endfor %}</td>
+        <td>{{ phase_tags(r.phase) }}</td>
+        <td><div class="actions">
+          {% if 'judge' in r.roles %}<a class="btn" href="/events/{{ r.event.id }}/judge">Review queue</a>{% endif %}
+          {% if 'organizer' in r.roles %}<a class="btn" href="/events/{{ r.event.id }}/manage">Manage</a>{% endif %}
+          {% if 'participant' in r.roles %}<a class="btn" href="/events/{{ r.event.id }}/team">Team</a>{% endif %}
+        </div></td>
+      </tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty"><p>You are not part of any event yet.</p><a class="btn primary" href="/">Find an event</a></div>
+  {% endif %}
+</div>
+<div class="panel">
+  <h2>API tokens</h2>
+  <p class="muted">For scripts and agents. A token acts as you, with your roles. Send it as <code>Authorization: Bearer ...</code>. See <a href="/api">the API reference</a>.</p>
+  {% if new_token %}
+  <div class="notice" role="status">Copy this token now; it is not shown again.<br><code>{{ new_token }}</code></div>
+  {% endif %}
+  {% if tokens %}
+  <div class="table-wrap"><table><thead><tr><th>Label</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+  <tbody>{% for t in tokens %}<tr><td>{{ t.label }}</td><td class="nowrap">{{ t.created_at | ts }}</td><td class="nowrap">{{ (t.last_used_at | ts) or 'never' }}</td>
+    <td><form class="inline" method="post" action="/me/tokens/revoke">{{ csrf_field() }}<input type="hidden" name="hint" value="{{ t.hint }}"><button class="link-btn" type="submit">Revoke</button></form></td></tr>{% endfor %}</tbody></table></div>
+  {% endif %}
+  <form class="row mt-s" method="post" action="/me/tokens">{{ csrf_field() }}
+    <label>Label<input type="text" name="label" placeholder="judging script" maxlength="60" required></label>
+    <button type="submit">Create token</button>
+  </form>
+</div>
+{% endblock %}

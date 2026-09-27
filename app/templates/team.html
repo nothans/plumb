@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Team · {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
+  <h1>{% if team %}{{ team.name }}{% else %}Join the event{% endif %}</h1>
+</div></div>
+{% if team %}
+<div class="split">
+  <div>
+    <div class="panel">
+      <h2>Your project</h2>
+      {% if project %}
+        <p><a href="/projects/{{ project.id }}"><strong>{{ project.title }}</strong></a> <span class="tag {{ 'ok' if project.status == 'submitted' else 'warn' }}">{{ project.status }}</span></p>
+        {% if phase.submissions == 'open' %}<a class="btn primary" href="/projects/{{ project.id }}/edit">Edit project</a>{% endif %}
+      {% elif phase.submissions == 'open' %}
+        <p>Nothing yet. Start a draft; only your team sees it until you submit.</p>
+        <a class="btn primary" href="/events/{{ event.id }}/projects/new">Start your project</a>
+      {% else %}
+        <p class="muted">Submissions are {{ phase.submissions }}.</p>
+      {% endif %}
+    </div>
+    <div class="panel">
+      <h2>Members</h2>
+      <table><tbody>{% for m in members %}<tr><td>{{ m.name }}</td><td class="muted">{{ m.email }}</td><td class="muted small">joined {{ m.joined_at | ts }}</td></tr>{% endfor %}</tbody></table>
+      <p class="muted small mt-s">Teams are at most {{ event.max_team_size }}.</p>
+    </div>
+  </div>
+  <aside>
+    {% if phase.submissions != 'closed' %}
+    <div class="panel">
+      <h2>Invite link</h2>
+      <p class="small">Anyone with this link and an account can join, until the team is full or submissions close.</p>
+      <input type="text" readonly value="{{ base_url }}/join/{{ team.invite_code }}" aria-label="Invite link">
+      <form class="mt-s" method="post" action="/teams/{{ team.id }}/reset-invite">{{ csrf_field() }}<button type="submit">Make a new link</button></form>
+      <hr class="rule">
+      <form method="post" action="/teams/{{ team.id }}/leave">{{ csrf_field() }}<button class="danger" type="submit">Leave team</button></form>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% elif is_judge %}
+<div class="panel"><p>You judge this event, so you cannot also compete in it.</p></div>
+{% elif phase.submissions == 'closed' %}
+<div class="panel"><p>Submissions have closed, so teams can no longer form.</p></div>
+{% else %}
+<div class="grid">
+  <div class="panel">
+    <h2>Start a team</h2>
+    <p class="muted">Solo is fine: a team of one.</p>
+    <form class="stack" method="post" action="/events/{{ event.id }}/teams">{{ csrf_field() }}
+      <label>Team name<input type="text" name="name" maxlength="80" required></label>
+      <div><button class="primary" type="submit">Create team</button></div>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>Join a team</h2>
+    <p>Ask a teammate for their invite link and open it. It looks like <code>{{ base_url }}/join/...</code></p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

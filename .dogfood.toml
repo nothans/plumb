@@ -1,0 +1,27 @@
+# DOGFOOD 2026 acceptance checker config. Run with:
+#   python3 tools/acceptance_run.py .dogfood.toml > acceptance-report.txt
+# (tools/acceptance_run.py is the published run.py, byte for byte; fixtures.json sits
+# beside this file, where run.py looks for it.)
+# The headers are the demo sessions that `docker compose up` prints on boot.
+
+[portal]
+base_url = "http://localhost:8080"
+
+[tiers]
+# The checker has no T3 checks, so its report prints T3 as claimed but not
+# verified. T3 is covered by tests/test_flows.py; README.md maps each piece.
+claimed = ["T1", "T2", "T3"]
+pitch = "A hackathon portal whose results you can check: judge bias corrected with honest intervals, every action hash-chained, results signed."
+
+[auth]
+organizer   = "Cookie: plumb_session=demo-organizer-3c1f9a7e"
+judge_a     = "Cookie: plumb_session=demo-judge-a-8b27d4c0"
+judge_b     = "Cookie: plumb_session=demo-judge-b-51e0f6a3"
+participant = "Cookie: plumb_session=demo-participant-e94a2b18"
+
+[routes]
+gallery      = "/projects"
+submit       = "/events/evt_01/projects/new"
+judge_scores = "/api/judge/scores"
+peer_scores  = "/api/judge/scores?judge=jdg_24"
+csv_export   = "/events/evt_01/export/scores.csv"

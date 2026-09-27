@@ -1,0 +1,22 @@
+# docker compose up  ->  http://localhost:8080, seeded with the DOGFOOD fixtures (demo mode).
+# The test logins are printed in the log on every boot.
+services:
+  plumb:
+    build: .
+    image: plumb:local
+    ports:
+      - "8080:8080"
+    environment:
+      # Demo mode seeds fixtures.json and turns on the published demo logins
+      # (their cookies are in .dogfood.toml). Never run a real event with it:
+      # see "Run a real event" in README.md.
+      PLUMB_DEMO: "1"
+      # PLUMB_BASE_URL: "https://judging.example.org"   # links in invitations and records; default: the address used
+      # PLUMB_ADMIN_EMAIL / PLUMB_ADMIN_PASSWORD create the first admin on a non-demo install.
+      # PLUMB_SECURE_COOKIES: "1"          # behind HTTPS
+    volumes:
+      - plumb-data:/data
+    restart: unless-stopped
+
+volumes:
+  plumb-data:

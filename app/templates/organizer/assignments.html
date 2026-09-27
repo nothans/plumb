@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Assignments · {{ event.name }}{% endblock %}
+{% block content %}
+{% set active = 'assignments' %}{% include "organizer/_nav.html" %}
+<div class="panel">
+  <h2>Automatic assignment</h2>
+  <p>Brings every eligible project up to <strong>{{ prog.target }}</strong> assigned judges (change the target in Settings). It keeps judges to their tracks, skips anyone with a conflict of interest (on the team, or sharing a work email domain with it), fills the least-covered projects first, and gives each to the judge with the lightest load. Existing assignments and reviews are never touched.</p>
+  <form method="post" action="/events/{{ event.id }}/manage/assignments/auto">{{ csrf_field() }}<button class="primary" type="submit">Assign up to {{ prog.target }} per project</button></form>
+  <p class="small muted mt-s">{{ prog.assigned }} assignments, {{ prog.reviewed }} reviewed. {{ prog.unassigned_projects }} projects have no judge.</p>
+</div>
+
+<div class="panel">
+  <h2>By project</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Project</th><th>Judges</th><th>Add a judge</th></tr></thead>
+    <tbody>{% for p in prog.projects %}
+      <tr id="{{ p.id }}">
+        <td><a href="/projects/{{ p.id }}">{{ p.title }}</a><br><span class="small muted">{{ tracks.get(p.track_id, '') }}</span></td>
+        <td>
+          {% for a in by_project.get(p.id, []) %}
+            <div class="actions">
+              <span>{{ a.judge_name }}</span>
+              {% if a.review_id %}<span class="tag ok">reviewed</span>{% else %}<span class="tag">pending</span>
+                <form class="inline" method="post" action="/events/{{ event.id }}/manage/assignments/remove">{{ csrf_field() }}
+                  <input type="hidden" name="judge_id" value="{{ a.judge_id }}"><input type="hidden" name="project_id" value="{{ p.id }}">
+                  <button class="link-btn" type="submit" aria-label="Remove {{ a.judge_name }} from {{ p.title }}">remove</button></form>
+              {% endif %}
+              <span class="small muted">{{ a.source }}</span>
+            </div>
+          {% else %}<span class="tag warn">none</span>{% endfor %}
+        </td>
+        <td>
+          <form class="row" method="post" action="/events/{{ event.id }}/manage/assignments/add">{{ csrf_field() }}
+            <input type="hidden" name="project_id" value="{{ p.id }}">
+            <label><span class="vh">Judge</span>
+              <select name="judge_id" required><option value="" selected disabled>Choose a judge</option>{% for j in judges %}<option value="{{ j.id }}">{{ j.name }} ({{ j.assigned }})</option>{% endfor %}</select>
+            </label>
+            <button type="submit">Add</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
