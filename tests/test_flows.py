@@ -167,15 +167,31 @@ def test_auto_assignment_reaches_target_without_conflicts(organizer, db):
 
 
 def test_duplicate_is_flagged_on_import_and_can_be_swapped(organizer, db, anon):
-    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_41'").fetchone()[0] == "prj_07"
+    # The team's latest submission is its entry; the earlier one is the duplicate.
+    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_07'").fetchone()[0] == "prj_41"
     assert "Dry Harbour" in organizer.get(f"/events/{FIX}/manage/integrity").text
-    r = post_form(organizer, f"/events/{FIX}/manage/duplicates", {"keep": "prj_41", "drop": "prj_07"},
+    r = post_form(organizer, f"/events/{FIX}/manage/duplicates", {"keep": "prj_07", "drop": "prj_41"},
                   csrf_from=f"/events/{FIX}/manage")
     assert r.status_code == 303
-    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_07'").fetchone()[0] == "prj_41"
-    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_41'").fetchone()[0] is None
-    assert anon.get("/projects/prj_07").status_code == 404
-    assert anon.get("/projects/prj_41").status_code == 200
+    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_41'").fetchone()[0] == "prj_07"
+    assert db.execute("SELECT duplicate_of FROM projects WHERE id = 'prj_07'").fetchone()[0] is None
+    assert anon.get("/projects/prj_41").status_code == 404
+    assert anon.get("/projects/prj_07").status_code == 200
+
+
+def test_track_prizes_from_the_settings_form(organizer, db):
+    form = {k: db.execute(f"SELECT {k} FROM events WHERE id = 'evt_demo_live'").fetchone()[0] or ""
+            for k in ("name", "submissions_open", "submissions_close", "judging_close")}
+    r = post_form(organizer, f"/events/{LIVE}/manage/settings",
+                  {**form, "prizes": "Best in show\nBest game | most fun | Games"}, csrf_from=f"/events/{LIVE}/manage/settings")
+    assert r.status_code == 303
+    rows = db.execute("SELECT p.name, t.name AS track FROM prizes p LEFT JOIN tracks t ON t.id = p.track_id "
+                      "WHERE p.event_id = ? ORDER BY p.position", (LIVE,)).fetchall()
+    assert [(r["name"], r["track"]) for r in rows] == [("Best in show", None), ("Best game", "Games")]
+    assert "Best game | most fun | Games" in organizer.get(f"/events/{LIVE}/manage/settings").text
+    r = post_form(organizer, f"/events/{LIVE}/manage/settings",
+                  {**form, "prizes": "Best robot | | Robots"}, csrf_from=f"/events/{LIVE}/manage/settings")
+    assert r.status_code == 422
 
 
 def test_rubric_weights_change_the_live_ranking(organizer):
@@ -224,7 +240,7 @@ def test_publish_issues_signed_records_and_locks_reviews(app, organizer, judge_a
     top = signed["ranking"][0]["project"]
     assert organizer.post(f"/api/v1/projects/{top}/disqualify", json={"reason": "late"}).status_code == 409
     assert organizer.patch(f"/api/v1/events/{FIX}", json={"submissions_close": ts(24 * 365)}).status_code == 409
-    assert organizer.post(f"/api/v1/events/{FIX}/duplicates", json={"keep": "prj_41", "drop": "prj_07"}).status_code == 409
+    assert organizer.post(f"/api/v1/events/{FIX}/duplicates", json={"keep": "prj_07", "drop": "prj_41"}).status_code == 409
 
     # Reviews and the rubric are locked now.
     r = judge_a.put("/api/v1/projects/prj_06/review", json={"values": {"functionality": 1, "quality": 1, "innovation": 1}})
@@ -244,7 +260,7 @@ def test_ballot_is_shuffled_per_voter_and_counts_stay_hidden(app, participant, o
     order2 = [p["id"] for p in v2.get(f"/api/v1/events/{FIX}/ballot").json()["projects"]]
     assert sorted(order1) == sorted(order2) and order1 != order2
     assert order1 == [p["id"] for p in v1.get(f"/api/v1/events/{FIX}/ballot").json()["projects"]]
-    assert "prj_41" not in order1  # duplicates are not on the ballot
+    assert "prj_07" not in order1  # duplicates are not on the ballot
 
     assert v1.post("/api/v1/projects/prj_02/vote").status_code == 204
     assert v1.post("/api/v1/projects/prj_02/vote").status_code == 409  # once per project
@@ -278,7 +294,9 @@ def test_new_accounts_voting_show_up_as_a_signal_and_can_be_voided(app, organize
         signup(app, f"sock{i}@example.net").post("/api/v1/projects/prj_09/vote")
     signals = organizer.get(f"/api/v1/events/{FIX}/abuse").json()
     assert len(signals["fresh_accounts"]) == 3
-    assert signals["concentrated"][0]["project_id"] == "prj_09"
+    # While voting is open the project is not named: that would leak the race.
+    assert signals["concentrated"][0]["project_id"] is None
+    assert signals["concentrated"][0]["from_new_accounts"] == 3
     voter = signals["fresh_accounts"][0]["id"]
     r = organizer.post(f"/api/v1/events/{FIX}/void-votes", json={"voter_id": voter, "reason": "sock puppet"})
     assert r.json() == {"removed": 1}

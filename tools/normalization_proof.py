@@ -64,7 +64,9 @@ def fixture() -> dict:
 
 
 def design(fx: dict) -> tuple[list[tuple[str, str]], dict[str, str]]:
-    pairs = [(s["judge"], s["project"]) for s in fx["scores"] if s["project"] != "prj_41"]
+    # prj_07 is the earlier of the team's two "Dry Harbour" entries; Plumb
+    # counts the later one, so the earlier one's reviews are left out.
+    pairs = [(s["judge"], s["project"]) for s in fx["scores"] if s["project"] != "prj_07"]
     track = {p["id"]: p["track"] for p in fx["projects"]}
     return pairs, track
 

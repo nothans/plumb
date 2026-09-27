@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .. import audit, domain, ratelimit, records, transfer
 from ..webhooks import check_destination
 from ..db import new_id, now, transaction
-from ..web import actor, base_url, conn_for, render, same_origin
+from ..web import actor, base_url, conn_for, render, same_origin, signing_base_url
 
 router = APIRouter(dependencies=[Security(HTTPBearer(auto_error=False))])
 
@@ -74,6 +74,7 @@ class EventIn(BaseModel):
     votes_per_voter: int | None = None
     reviews_per_project: int | None = None
     max_team_size: int | None = None
+    pairwise: bool | None = None
     tracks: list[str] = []
     prizes: list[dict[str, Any]] | None = None
 
@@ -330,6 +331,12 @@ def unvote(request: Request, project_id: str):
     return Response(status_code=204)
 
 
+@v1.get("/events/{event_id}/votes/reveal")
+def vote_reveal(request: Request, event_id: str):
+    """After voting closes: every counted vote as seal, project and nonce (no voters), to check against the audit log."""
+    return domain.vote_reveal(conn_for(request), actor(request), event_id)
+
+
 @v1.get("/events/{event_id}/votes")
 def tallies(request: Request, event_id: str):
     conn = conn_for(request)
@@ -474,7 +481,7 @@ class PublishIn(BaseModel):
 def publish(request: Request, event_id: str, data: PublishIn | None = None):
     """Sign and freeze the results, award prizes, issue judge records and team certificates. Final."""
     return records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
-                                   base_url(request), (data.awards if data else None))
+                                   signing_base_url(request), (data.awards if data else None))
 
 
 @v1.get("/events/{event_id}/awards/suggested")

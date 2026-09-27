@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import getpass
 import json
+from secrets import token_hex
 import sqlite3
 import sys
 from datetime import timedelta
@@ -166,11 +167,12 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
         target = projects[len(projects) // 2]
         for k, (uid, _, ip) in enumerate(honest):
             for pid in rng.sample(projects, 3):
-                conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip) VALUES (?,?,?,?,?)",
-                             (REPLAY_EVENT, uid, pid, to_ts(v_open + timedelta(hours=2 + 5 * k)), ip))
+                conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
+                             (REPLAY_EVENT, uid, pid, to_ts(v_open + timedelta(hours=2 + 5 * k)), ip, token_hex(16)))
         for k, uid in enumerate(socks):
-            conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip) VALUES (?,?,?,?,?)",
-                         (REPLAY_EVENT, uid, target, to_ts(v_open + timedelta(days=3, minutes=2 + k)), "203.0.113.7"))
+            conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
+                         (REPLAY_EVENT, uid, target, to_ts(v_open + timedelta(days=3, minutes=2 + k)), "203.0.113.7",
+                          token_hex(16)))
         audit.append(conn, "demo.votes_seeded", actor_id=admin.id, event_id=REPLAY_EVENT, subject=REPLAY_EVENT,
                      detail={"honest_voters": len(honest), "planted_sock_puppets": len(socks), "target": target})
 
@@ -238,6 +240,13 @@ def bootstrap(settings: Settings, out=sys.stdout) -> None:
         print(f"created admin {settings.admin_email}", file=out)
     print(f"plumb: database {settings.database_path}", file=out)
     print(f"plumb: signing key {signer.key_id}", file=out)
+    demo_db = conn.execute("SELECT 1 FROM meta WHERE key = 'demo_seeded'").fetchone() is not None
+    if demo_db and not settings.demo:
+        conn.close()
+        raise SystemExit(
+            "plumb: this database was seeded in demo mode, and its logins and sessions are public.\n"
+            "plumb: refusing to start with PLUMB_DEMO=0. Start from an empty volume "
+            "(docker compose down -v, then up), or keep PLUMB_DEMO=1 for the demo.")
     if settings.demo:
         seed_demo(conn, settings)
         sessions = ensure_demo_sessions(conn)

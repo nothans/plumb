@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Numbered migrations for databases created by an older version. schema.sql
 # always describes the current shape (and is idempotent), so a new database
 # needs none of these; an old one runs the ones above its stored version.
 MIGRATIONS: dict[int, list[str]] = {
     2: ["ALTER TABLE events ADD COLUMN pairwise INTEGER NOT NULL DEFAULT 0 CHECK (pairwise IN (0, 1))"],
+    3: ["ALTER TABLE votes ADD COLUMN nonce TEXT"],
 }
 
 

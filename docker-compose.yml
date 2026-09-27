@@ -11,7 +11,8 @@ services:
       # (their cookies are in .dogfood.toml). Never run a real event with it:
       # see "Run a real event" in README.md.
       PLUMB_DEMO: "1"
-      # PLUMB_BASE_URL: "https://judging.example.org"   # links in invitations and records; default: the address used
+      # The public address: written into invitation links and signed into every record.
+      PLUMB_BASE_URL: "http://localhost:8080"
       # PLUMB_ADMIN_EMAIL / PLUMB_ADMIN_PASSWORD create the first admin on a non-demo install.
       # PLUMB_SECURE_COOKIES: "1"          # behind HTTPS
     volumes:

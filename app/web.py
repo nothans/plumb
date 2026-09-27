@@ -146,6 +146,12 @@ def base_url(request: Request) -> str:
     return configured or str(request.base_url).rstrip("/")
 
 
+def signing_base_url(request: Request) -> str:
+    """The issuer written into signed records: only ever the configured
+    address, never the request's Host header."""
+    return request.app.state.settings.base_url
+
+
 def render(request: Request, template: str, status_code: int = 200, **ctx: Any) -> HTMLResponse:
     a = actor(request)
     ctx.setdefault("error", None)
@@ -162,10 +168,14 @@ def render(request: Request, template: str, status_code: int = 200, **ctx: Any) 
     return response
 
 
+_secure_cookies = False  # set from settings by main.create_app
+
+
 def redirect(url: str, notice: str | None = None) -> RedirectResponse:
     response = RedirectResponse(url, status_code=303)
     if notice:
-        response.set_cookie(FLASH_COOKIE, quote(notice), max_age=60, httponly=True, samesite="lax")
+        response.set_cookie(FLASH_COOKIE, quote(notice), max_age=60, httponly=True, samesite="lax",
+                            secure=_secure_cookies)
     return response
 
 

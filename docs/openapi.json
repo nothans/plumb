@@ -167,6 +167,17 @@
             ],
             "title": "Name"
           },
+          "pairwise": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pairwise"
+          },
           "prizes": {
             "anyOf": [
               {
@@ -2368,6 +2379,55 @@
           }
         ],
         "summary": "Tallies",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/votes/reveal": {
+      "get": {
+        "description": "After voting closes: every counted vote as seal, project and nonce (no voters), to check against the audit log.",
+        "operationId": "vote_reveal_api_v1_events__event_id__votes_reveal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Vote Reveal",
         "tags": [
           "v1"
         ]

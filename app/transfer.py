@@ -92,6 +92,16 @@ def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, 
         seen_pairs.add(pair)
         if not isinstance(s.get("criteria"), dict) or not s["criteria"]:
             problems.append(f"score {i} has no criteria")
+    pl = data.get("plumb") or {}
+    for i, a in enumerate(pl.get("assignments", [])):
+        if a.get("project") not in project_ids or a.get("judge") not in judge_ids:
+            problems.append(f"assignment {i} refers to a project or judge not in this file")
+    for i, c in enumerate(pl.get("comparisons", [])):
+        if not {c.get("a"), c.get("b"), c.get("winner")} <= project_ids or c.get("judge") not in judge_ids:
+            problems.append(f"comparison {i} refers to a project or judge not in this file")
+    for i, d in enumerate(pl.get("duplicates", [])):
+        if not {d.get("project"), d.get("duplicate_of")} <= project_ids:
+            problems.append(f"duplicate {i} refers to a project not in this file")
     if problems:
         raise domain.Invalid("the file has problems: " + "; ".join(problems[:10]) + ("; ..." if len(problems) > 10 else ""))
 
@@ -194,11 +204,11 @@ def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, 
             counts["teams"] += 1
 
         # Which entry of a team is live: a Plumb export says so explicitly
-        # (the organizer may have swapped it); otherwise the earliest
-        # submission is the entry and later ones by the same team are
-        # recorded as its duplicates for an organizer to review.
+        # (the organizer may have swapped it); otherwise the team's latest
+        # submission is its entry (its final word before the deadline), and
+        # earlier ones are recorded as duplicates for an organizer to review.
         explicit = {d["project"]: d["duplicate_of"] for d in plumb.get("duplicates", [])}
-        ordered = sorted(data.get("projects", []), key=lambda p: (p.get("submitted_at") or "9999", p["id"]))
+        ordered = sorted(data.get("projects", []), key=lambda p: (p.get("submitted_at") or "", p["id"]), reverse=True)
         dup_of_old: dict[str, str | None] = {}
         first_by_team: dict[str, str] = {}
         for p in ordered:

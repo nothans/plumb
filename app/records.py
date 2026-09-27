@@ -74,21 +74,30 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
         ph = domain.phase(event)
         if ph["submissions"] != "closed":
             raise domain.Conflict("submissions are still open")
-        if ph["voting"] == "open":
-            raise domain.Conflict(f"the community vote is open until {event['voting_close']}; publish after it closes")
+        if ph["voting"] in ("open", "upcoming"):
+            raise domain.Conflict(f"the community vote runs until {event['voting_close']}; publish after it closes, "
+                                  "so judged results cannot sway it")
+        if not base_url:
+            raise domain.Conflict("set PLUMB_BASE_URL to the portal's public address first: it is signed into every record")
         res = domain.compute_results(conn, event_id)
         fit = res["fit"]
         if not fit.projects:
             raise domain.Conflict("there are no reviews to publish")
         if not fit.identifiable:
-            raise domain.Conflict("every project needs more reviews than there are projects before the noise, "
-                                  "and so the ranking's uncertainty, can be estimated; assign more judges")
+            raise domain.Conflict("there are not enough reviews to estimate how uncertain the ranking is "
+                                  "(the event needs more reviews than projects); assign more judges first")
         ranked = {p.project for p in fit.projects}
         chosen = []
         overall_taken: set[str] = set()
         for suggestion in domain.default_awards(conn, event_id, fit, res["projects"]):
             prize = suggestion["prize"]
-            pick = (awards or {}).get(prize["id"], suggestion["project"])
+            if prize["track_id"]:
+                top = suggestion["project"]
+            else:
+                top = next((p.project for p in fit.projects if p.project not in overall_taken), None)
+            pick = (awards or {}).get(prize["id"], top)
+            if pick and not prize["track_id"] and pick in overall_taken:
+                raise domain.Invalid(f"{res['projects'][pick]['title']} already won an overall prize")
             if not pick:
                 continue
             if pick not in ranked:
@@ -108,7 +117,7 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
                            "title": res["projects"][pick]["title"], "team": res["projects"][pick]["team_id"],
                            "rank": fit.project(pick).rank, "rival": rival,
                            "p_beats_rival": None if rival is None else round(fit.p_better(pick, rival), 4),
-                           "suggested": suggestion["project"], "overrode_suggestion": pick != suggestion["project"]})
+                           "suggested": top, "overrode_suggestion": pick != top})
         head = audit.head(conn)
         ev = {"id": event["id"], "name": event["name"]}
         ranking = []

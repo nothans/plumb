@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .. import audit, domain, records, transfer
 from ..webhooks import check_destination
-from ..web import actor, base_url, body, conn_for, redirect, render
+from ..web import actor, base_url, body, conn_for, redirect, render, signing_base_url
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
 
@@ -20,8 +20,9 @@ def _event_form_data(data: dict) -> tuple[dict, list[str], list[dict]]:
     prizes = []
     for line in str(data.get("prizes", "")).splitlines():
         if line.strip():
-            name, _, desc = line.partition("|")
-            prizes.append({"name": name.strip(), "description": desc.strip()})
+            parts = [p.strip() for p in line.split("|")]
+            prizes.append({"name": parts[0], "description": parts[1] if len(parts) > 1 else "",
+                           "track_name": parts[2] if len(parts) > 2 else ""})
     return data, tracks, prizes
 
 
@@ -112,7 +113,8 @@ def _settings_page(request: Request, event_id: str, form=None, error=None, statu
     prizes = domain.prizes(conn, event_id)
     return render(request, "event_form.html", status_code=status_code, event=event,
                   form=form or {**dict(event), "prizes": "\n".join(
-                      p["name"] + (f" | {p['description']}" if p["description"] else "") for p in prizes)},
+                      " | ".join([p["name"], p["description"] or ""] + ([p["track_name"]] if p["track_name"] else []))
+                      .rstrip(" |") for p in prizes)},
                   tracks=domain.tracks(conn, event_id), error=error)
 
 
@@ -269,7 +271,7 @@ async def publish(request: Request, event_id: str):
         return redirect(f"/events/{event_id}/manage/results#publish", "Tick the box to confirm; publishing cannot be undone.")
     awards = {k[len("award_"):]: str(v) for k, v in data.items() if k.startswith("award_")}
     out = records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
-                                  base_url(request), awards)
+                                  signing_base_url(request), awards)
     return redirect(f"/events/{event_id}/results",
                     f"Results published with {out['judge_records']} judge records and {out['team_records']} team certificates, all signed.")
 

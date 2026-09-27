@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS votes (
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
     ip         TEXT,
+    nonce      TEXT,        -- random; the audit log holds sha256(nonce:project) until voting closes
     PRIMARY KEY (voter_id, project_id)
 );
 CREATE INDEX IF NOT EXISTS votes_event ON votes(event_id);

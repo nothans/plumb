@@ -51,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.signer = Signer.load_or_create(settings.signing_key_path)
     app.state.limiter = RateLimiter()
+    web._secure_cookies = settings.secure_cookies
 
     @app.middleware("http")
     async def per_request(request: Request, call_next):

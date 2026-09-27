@@ -46,7 +46,7 @@
   </div>
   <label>{% if event %}Add tracks{% else %}Tracks{% endif %} <span class="hint">One per line.{% if tracks %} Current: {% for t in tracks %}{{ t.name }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</span>
     <textarea name="tracks" rows="4">{% if not event %}{{ form.tracks or '' }}{% endif %}</textarea></label>
-  <label>Prizes <span class="hint">One per line, as "Name | description".</span><textarea name="prizes" rows="4">{{ form.prizes or '' }}</textarea></label>
+  <label>Prizes <span class="hint">One per line, as "Name | description", or "Name | description | Track" for a track prize.</span><textarea name="prizes" rows="4">{{ form.prizes or '' }}</textarea></label>
   <div class="actions"><button class="primary" type="submit">{% if event %}Save settings{% else %}Create event{% endif %}</button></div>
 </form>
 </div>

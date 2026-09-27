@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import assign, audit, normalize, pairwise
 from .db import new_id, now, parse_ts, transaction
-from .security import new_token, token_hash
+from .security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
 
 
 class DomainError(Exception):
@@ -69,7 +69,9 @@ _URL = re.compile(r"^https?://[^\s<>\"]+$", re.IGNORECASE)
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Control characters, and the invisible bidi and zero-width marks that can
+# make one team name look like another on a signed certificate.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 
 
 def _as_str(value, field: str) -> str:
@@ -109,7 +111,7 @@ def clean_email(value: str | None) -> str:
 
 def clean_ts(value: str | None, field: str, *, required: bool = False) -> str | None:
     """Accept ISO 8601 or an HTML datetime-local value (taken as UTC)."""
-    value = (value or "").strip()
+    value = _as_str(value, field).strip()
     if not value:
         if required:
             raise Invalid(f"{field} is required")
@@ -336,18 +338,38 @@ def create_event(conn: sqlite3.Connection, actor: Actor | None, form: dict, trac
 
 
 def _save_prizes(conn: sqlite3.Connection, event_id: str, prizes: list[dict]) -> None:
-    track_ids = {r["id"] for r in conn.execute("SELECT id FROM tracks WHERE event_id = ?", (event_id,))}
+    rows = conn.execute("SELECT id, name FROM tracks WHERE event_id = ?", (event_id,)).fetchall()
+    track_ids = {r["id"] for r in rows}
+    by_name = {r["name"].lower(): r["id"] for r in rows}
+    existing = {r["name"].lower(): r["id"] for r in conn.execute(
+        "SELECT id, name FROM prizes WHERE event_id = ?", (event_id,))}
+    kept = set()
     for pos, prize in enumerate(prizes):
         name = clean_text(prize.get("name"), "prize name", max_len=120)
         if not name:
             continue
-        track = prize.get("track_id") or None
+        track = _as_str(prize.get("track_id"), "prize track") or None
+        if not track and prize.get("track_name"):
+            track = by_name.get(str(prize["track_name"]).strip().lower())
+            if track is None:
+                raise Invalid(f"prize {name}: there is no track called {prize['track_name']}")
         if track and track not in track_ids:
             raise Invalid("prize track is not a track of this event")
-        conn.execute(
-            "INSERT INTO prizes(id, event_id, track_id, name, description, position) VALUES (?,?,?,?,?,?)",
-            (new_id("prz"), event_id, track, name, clean_text(prize.get("description"), "prize description", max_len=500), pos),
-        )
+        desc = clean_text(prize.get("description"), "prize description", max_len=500)
+        pid = existing.get(name.lower())
+        if pid:
+            # Same name, same prize: keep its id so nothing that refers to it breaks.
+            conn.execute("UPDATE prizes SET track_id = ?, description = ?, position = ? WHERE id = ?",
+                         (track, desc, pos, pid))
+        else:
+            pid = new_id("prz")
+            conn.execute(
+                "INSERT INTO prizes(id, event_id, track_id, name, description, position) VALUES (?,?,?,?,?,?)",
+                (pid, event_id, track, name, desc, pos),
+            )
+        kept.add(pid)
+    for pid in set(existing.values()) - kept:
+        conn.execute("DELETE FROM prizes WHERE id = ?", (pid,))
 
 
 def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, form: dict,
@@ -357,6 +379,15 @@ def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
         event = get_event(conn, event_id)
         values = _event_values(form, partial=dict(event))
         changed = {k: {"from": event[k], "to": v} for k, v in values.items() if event[k] != v}
+        if event["results_published_at"]:
+            current_prizes = [(p["name"], p["description"], p["track_id"]) for p in prizes_of(conn, event_id)]
+            wanted = None if prizes is None else [
+                (str(p.get("name") or "").strip(), str(p.get("description") or "").strip(), p.get("track_id"))
+                for p in prizes if str(p.get("name") or "").strip()]
+            if (set(changed) - {"tagline", "description"} or [t for t in (new_tracks or []) if t.strip()]
+                    or (wanted is not None and [w[:2] for w in wanted] != [c[:2] for c in current_prizes])):
+                raise Conflict("results are published; only the tagline and description can still change")
+            prizes = None
         _check_schedule_change(conn, event, changed)
         if changed:
             conn.execute(
@@ -372,7 +403,6 @@ def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
                 existing.add(name.lower())
                 added.append(name)
         if prizes is not None:
-            conn.execute("DELETE FROM prizes WHERE event_id = ?", (event_id,))
             _save_prizes(conn, event_id, prizes)
         if changed or added or prizes is not None:
             audit.append(conn, "event.updated", actor_id=actor.id, event_id=event_id, subject=event_id,
@@ -399,17 +429,28 @@ def _check_schedule_change(conn: sqlite3.Connection, event: sqlite3.Row, changed
         raise Conflict("results are published; the schedule is frozen")
     now_ts = now()
     if "submissions_close" in changed and event["submissions_close"] <= now_ts < changed["submissions_close"]["to"]:
-        if conn.execute("SELECT 1 FROM reviews WHERE event_id = ?", (event["id"],)).fetchone():
+        if conn.execute("SELECT 1 FROM reviews WHERE event_id = ? UNION SELECT 1 FROM comparisons WHERE event_id = ?",
+                        (event["id"], event["id"])).fetchone():
             raise Conflict("judges have already reviewed submissions; submissions cannot reopen")
-    if event["voting_mode"] != "off" and event["voting_close"] and event["voting_close"] <= now_ts:
+    voting_open_now = (event["voting_mode"] != "off" and event["voting_open"] and event["voting_close"]
+                       and event["voting_open"] <= now_ts < event["voting_close"])
+    if voting_open_now:
         new_close = changed.get("voting_close", {}).get("to", event["voting_close"])
         new_mode = changed.get("voting_mode", {}).get("to", event["voting_mode"])
-        if new_mode != "off" and (new_close is None or new_close > now_ts):
-            raise Conflict("voting has closed and its counts are visible; it cannot reopen")
+        if new_mode == "off" or new_close is None or new_close < event["voting_close"]:
+            raise Conflict("voting is open; it can be extended but not shortened or switched off")
+    ever_closed = (event["voting_close"] and event["voting_close"] <= now_ts
+                   and conn.execute("SELECT 1 FROM votes WHERE event_id = ?", (event["id"],)).fetchone())
+    if ever_closed and set(changed) & {"voting_mode", "voting_open", "voting_close", "votes_per_voter"}:
+        raise Conflict("voting has closed and its counts are visible; its settings are frozen")
 
 
 def tracks(conn: sqlite3.Connection, event_id: str) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM tracks WHERE event_id = ? ORDER BY name", (event_id,)).fetchall()
+
+
+def prizes_of(conn: sqlite3.Connection, event_id: str) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM prizes WHERE event_id = ? ORDER BY position", (event_id,)).fetchall()
 
 
 def prizes(conn: sqlite3.Connection, event_id: str) -> list[sqlite3.Row]:
@@ -1194,7 +1235,9 @@ def track_leaders(fit, projects: dict) -> dict[str | None, dict]:
     out: dict[str | None, dict] = {}
     groups: dict[str | None, list] = {None: list(fit.projects)}
     for p in fit.projects:
-        groups.setdefault(projects[p.project]["track_id"], []).append(p)
+        track = projects[p.project]["track_id"]
+        if track is not None:
+            groups.setdefault(track, []).append(p)
     for track, ranked in groups.items():
         if not ranked:
             continue
@@ -1294,11 +1337,32 @@ def cast_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str) ->
             raise Conflict("you already voted for this project")
         if used >= event["votes_per_voter"]:
             raise Conflict(f"you have used all {event['votes_per_voter']} of your votes")
+        nonce = new_token(16)
         conn.execute(
-            "INSERT INTO votes(event_id, voter_id, project_id, created_at, ip) VALUES (?,?,?,?,?)",
-            (event["id"], actor.id, project_id, now(), actor.ip),
+            "INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
+            (event["id"], actor.id, project_id, now(), actor.ip, nonce),
         )
-        audit.append(conn, "vote.cast", actor_id=actor.id, event_id=event["id"], subject=project_id, ip=actor.ip)
+        # Sealed: the log proves a vote was cast and pins what it was, without
+        # saying what it was until the nonces are revealed at close.
+        audit.append(conn, "vote.cast", actor_id=actor.id, event_id=event["id"], subject="sealed",
+                     detail={"seal": vote_seal(nonce, project_id)}, ip=actor.ip)
+
+
+def vote_seal(nonce: str, project_id: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"{nonce}:{project_id}".encode()).hexdigest()
+
+
+def vote_reveal(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> dict:
+    """After voting closes: every counted vote as (seal, project, nonce),
+    without voters. Anyone can recompute each seal, find it among the
+    audit log's vote.cast entries, and so check the tally against history."""
+    event = get_event(conn, event_id)
+    if phase(event)["voting"] != "closed":
+        raise Forbidden("votes are sealed until voting closes")
+    votes = [{"seal": vote_seal(r["nonce"] or "", r["project_id"]), "project": r["project_id"], "nonce": r["nonce"]}
+             for r in conn.execute("SELECT project_id, nonce FROM votes WHERE event_id = ? ORDER BY nonce", (event_id,))]
+    return {"event": event_id, "votes": votes}
 
 
 def withdraw_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str) -> None:
@@ -1308,10 +1372,12 @@ def withdraw_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str
         event = get_event(conn, project["event_id"])
         if phase(event)["voting"] != "open":
             raise Conflict("voting is not open")
-        cur = conn.execute("DELETE FROM votes WHERE voter_id = ? AND project_id = ?", (actor.id, project_id))
-        if cur.rowcount == 0:
+        row = conn.execute("SELECT nonce FROM votes WHERE voter_id = ? AND project_id = ?", (actor.id, project_id)).fetchone()
+        if row is None:
             raise NotFound("you have not voted for this project")
-        audit.append(conn, "vote.withdrawn", actor_id=actor.id, event_id=event["id"], subject=project_id, ip=actor.ip)
+        conn.execute("DELETE FROM votes WHERE voter_id = ? AND project_id = ?", (actor.id, project_id))
+        audit.append(conn, "vote.withdrawn", actor_id=actor.id, event_id=event["id"], subject="sealed",
+                     detail={"seal": vote_seal(row["nonce"] or "", project_id)}, ip=actor.ip)
 
 
 def vote_tallies(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> list[sqlite3.Row]:
@@ -1360,6 +1426,10 @@ def abuse_signals(conn: sqlite3.Connection, actor: Actor | None, event_id: str) 
         "WHERE v.event_id = ? GROUP BY v.project_id HAVING from_new_accounts >= 3 ORDER BY from_new_accounts DESC",
         (event["voting_open"], event_id),
     ).fetchall()
+    if phase(event)["voting"] == "open":
+        # Naming the project, or its total, would leak the race to organizers.
+        concentrated = [{"project_id": None, "title": "one project (named when voting closes)", "votes": None,
+                         "from_new_accounts": r["from_new_accounts"]} for r in concentrated]
     hidden_comments = conn.execute(
         "SELECT COUNT(*) FROM comments c JOIN projects p ON p.id = c.project_id WHERE p.event_id = ? AND c.hidden_at IS NOT NULL",
         (event_id,),
@@ -1441,6 +1511,7 @@ def _direct_comparisons(conn: sqlite3.Connection, event_id: str) -> list[pairwis
     for r in conn.execute(
         "SELECT c.* FROM comparisons c JOIN projects a ON a.id = c.project_a JOIN projects b ON b.id = c.project_b "
         "WHERE c.event_id = ? AND a.duplicate_of IS NULL AND b.duplicate_of IS NULL "
+        "AND a.status = 'submitted' AND b.status = 'submitted' "
         "AND a.disqualified_reason IS NULL AND b.disqualified_reason IS NULL", (event_id,)
     ):
         loser = r["project_b"] if r["winner"] == r["project_a"] else r["project_a"]
@@ -1468,7 +1539,7 @@ def pairwise_next(conn: sqlite3.Connection, actor: Actor | None, event_id: str) 
     return {
         "event": event,
         "pair": (get_project(conn, pair[0]), get_project(conn, pair[1])) if pair else None,
-        "done": len(done),
+        "done": sum(1 for pair in done if pair <= set(assigned)),
         "possible": n * (n - 1) // 2,
     }
 
