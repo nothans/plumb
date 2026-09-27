@@ -16,7 +16,7 @@ docker compose up
 ```
 
 Then open http://localhost:8080.
-It needs no network at runtime: no CDN, no external API, no hosted database.
+It needs no network at runtime: no CDN, no external API, no hosted database (checked with `docker run --network none`). The first build downloads the Python base image and packages once, like any Docker build.
 On boot it loads the DOGFOOD `fixtures.json` and prints ready-made logins:
 
 ```
@@ -123,7 +123,7 @@ For a real event:
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest -q                                    # 75 tests
+python -m pytest -q                                    # 76 tests
 ruff check app tests tools                             # lint
 python tools/acceptance_run.py .dogfood.toml           # the DOGFOOD checker, against a running portal
 python tools/normalization_proof.py --draws 1000       # the proof, about 30 seconds

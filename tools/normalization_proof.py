@@ -51,20 +51,82 @@ re-runs a small version to keep the headline ordering honest.
 
 from __future__ import annotations
 
-import argparse
-import json
-import sys
-from pathlib import Path
+import os
+
+# Pin BLAS to one thread before numpy can load: the model solves many tiny
+# systems, and multithreaded BLAS makes that about 60x slower. (app/__init__
+# does the same, but import sorting must not be able to undo it here.)
+for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, "1")
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import sys  # noqa: E402
+from collections import defaultdict  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# Import the app package before numpy: it pins BLAS to one thread, which
-# only takes effect if it happens before numpy loads.
 import numpy as np  # noqa: E402
 
 from app import pairwise  # noqa: E402
 from app.normalize import Observation, combine, fit, raw_means, zscore_means  # noqa: E402
+
+
+def judge_spread(scores, lean=None) -> float:
+    """Sample standard deviation of per-judge mean scores on the 1-5 scale
+    (a review's score is the mean of its criteria): the organizers' sigma.
+    With lean, each judge's estimated lean (0-100 scale) is removed first."""
+    import statistics
+    per = defaultdict(list)
+    for s in scores:
+        v = sum(s["criteria"].values()) / len(s["criteria"])
+        if lean is not None:
+            v -= 4 * lean[s["judge"]] / 100
+        per[s["judge"]].append(v)
+    return statistics.stdev(statistics.mean(v) for v in per.values())
+
+
+def fixture_section(fx: dict) -> str:
+    """Part 1: the method run on the real fixtures, before and after."""
+    crit = [{"key": k, "weight": 1, "min_value": 1, "max_value": 5} for k in ("functionality", "quality", "innovation")]
+    titles = {p["id"]: p["title"] for p in fx["projects"]}
+    lines = ["## Part 1: the real fixture data", ""]
+    for label, drop in (("all 126 reviews", None), ("121 reviews, the superseded duplicate prj_07 left out (what Plumb ranks)", "prj_07")):
+        scores = [s for s in fx["scores"] if s["project"] != drop]
+        f = fit([Observation(s["judge"], s["project"], combine(s["criteria"], crit)) for s in scores])
+        lean = {j.judge: j.leniency for j in f.judges}
+        lines.append(f"* {label}: per-judge spread (sample sd of judge means, 1-5 scale) "
+                     f"**{judge_spread(scores):.2f} raw, {judge_spread(scores, lean):.2f} after removing each judge's "
+                     f"estimated lean**; estimated true judge lean sd {4 * f.judge_sd / 100:.2f}, "
+                     f"review noise sd {4 * f.noise_sd / 100:.2f}.")
+    lines += [
+        "",
+        "The organizers' sigma (0.42) is the first raw figure. Most of it is which projects each judge happened to see "
+        "and review noise, not the judges' own lean, which the model puts at about 0.16. A method that drives the "
+        "spread to zero (centering or z-scoring each judge) erases real differences between the projects each judge "
+        "was assigned along with the lean; Part 2 measures what that costs.",
+        "",
+        "Every project, raw against normalized (0-100 scale, 121 reviews; \"beats next\" is the calibrated chance "
+        "a project truly outranks the one below it):",
+        "",
+        "| rank | raw rank | move | project | reviews | raw | adjusted | 90% interval | beats next |",
+        "|---:|---:|---:|---|---:|---:|---:|---|---:|",
+    ]
+    scores = [s for s in fx["scores"] if s["project"] != "prj_07"]
+    f = fit([Observation(s["judge"], s["project"], combine(s["criteria"], crit)) for s in scores])
+    for p in f.projects:
+        move = p.raw_rank - p.rank
+        lines.append(f"| {p.rank} | {p.raw_rank} | {move:+d} | {titles[p.project]} ({p.project}) | {p.n_reviews} | "
+                     f"{p.raw_mean:.1f} | {p.adjusted:.1f} | {p.low:.1f} to {p.high:.1f} | "
+                     f"{'' if p.p_above_next is None else f'{p.p_above_next:.0%}'} |")
+    moved = sum(1 for p in f.projects if p.rank != p.raw_rank)
+    lines += ["", f"{moved} of {len(f.projects)} projects change rank, by at most "
+                  f"{max(abs(p.rank - p.raw_rank) for p in f.projects)} places. Every \"beats next\" is 50%: once "
+                  "judge lean is removed, the reviews show no detectable true difference between projects, and the "
+                  "calibration check in Part 2 is what makes that 50% trustworthy.", ""]
+    return "\n".join(lines) + "\n"
 
 
 def fixture() -> dict:
@@ -173,6 +235,8 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
 
 def report(res: dict, draws: int, seed: int) -> str:
     lines = [
+        "## Part 2: simulation with known ground truth",
+        "",
         f"{draws} draws per scenario, seed {seed}, on the fixture's judge-project graph "
         "(122 reviews, 40 projects, 30 judges, the duplicate's reviews left out; "
         "true project sd 12, judge lean sd 8, noise sd 10).",
@@ -201,7 +265,7 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", default=None, help="also write the report to this file")
     args = ap.parse_args()
-    text = report(evaluate(args.draws, args.seed), args.draws, args.seed)
+    text = fixture_section(fixture()) + "\n" + report(evaluate(args.draws, args.seed), args.draws, args.seed)
     print(text)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)

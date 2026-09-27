@@ -115,7 +115,7 @@ Seven scenarios test the assumptions:
 
 Four methods: `raw` means, per-judge `zscore`s, `plumb`'s model, and `pairwise`: Bradley-Terry on the preferences implied within each judge's scores (section 8), which ignores every judge's scale.
 
-The full output, 1000 draws per scenario, is in [`docs/normalization-proof.md`](docs/normalization-proof.md).
+The full output is in [`docs/normalization-proof.md`](docs/normalization-proof.md): part 1 is the method run on the real fixtures (before and after), part 2 this simulation, 1000 draws per scenario.
 The rank correlation with the truth (Spearman), and the paired difference from raw means with its 95% Monte Carlo interval:
 
 | scenario | raw | zscore | plumb | pairwise | plumb vs raw | plumb 90% coverage |
@@ -169,6 +169,15 @@ On a fresh boot, the seeded fixture event (121 reviews: the 126 in the file minu
 In plain words: in the fixture reviews, two judges looking at the same project disagree far more than projects differ from each other.
 Correcting for judges moves 25 of 40 projects relative to raw means (at most 5 places), by between -0.8 and +1.2 points each, and 90% intervals are 11.5 to 18 points wide on each side.
 Because no true spread is detectable, every calibrated probability is a coin flip: each "beats next", each track lead and each prize reads 50%, a *tie*.
+
+**The organizers' σ = 0.42.**
+The DOGFOOD homepage quotes the judge spread in the fixtures: the sample standard deviation of each judge's mean score (the mean of a review's three 1 to 5 criteria), over all 126 reviews, which is 0.42.
+Plumb reproduces it, and reports what happens to it: removing each judge's estimated lean takes it to 0.37.
+It does not go to zero, and should not: judges saw 1 to 11 projects each, from different tracks, with review noise of about 0.6 on this scale, so most of the 0.42 is which projects a judge happened to see plus noise.
+The model puts the true spread of judge lean at about 0.16.
+A method that drives the spread to zero (centering or z-scoring every judge) does so by construction, erasing real differences between the projects each judge was assigned; the `track` scenario above measures that cost.
+With the superseded duplicate left out (as Plumb ranks it), the same figures are 0.33 and 0.28.
+The full before/after, every project's raw score, adjusted score, interval and rank change, opens [`docs/normalization-proof.md`](docs/normalization-proof.md).
 
 A portal that printed a confident 1-to-40 ranking from this data would be telling organizers something the data does not support.
 Plumb prints the ranking, shows the intervals, warns on the results page when projects are this hard to separate, and shows the award probabilities at publication, so the organizer knows to treat neighbouring ranks as ties, ask for more reviews, or share a prize.

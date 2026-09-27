@@ -44,6 +44,19 @@ def test_section_6_figures_match_the_fixture_fit():
     assert all(abs(p.p_above_next - 0.5) < 0.01 for p in f.projects[:-1])
 
 
+def test_the_organizers_sigma_is_reproduced():
+    import sys
+    sys.path.insert(0, str(ROOT / "tools"))
+    import normalization_proof as proof
+    d, _ = _fixture_fit()
+    assert round(proof.judge_spread(d["scores"]), 2) == 0.42
+    assert "which is 0.42" in JUDGING and "takes it to 0.37" in JUDGING
+    crit = [{"key": k, "weight": 1, "min_value": 1, "max_value": 5} for k in ("functionality", "quality", "innovation")]
+    f = fit([Observation(s["judge"], s["project"], combine(s["criteria"], crit)) for s in d["scores"]])
+    lean = {j.judge: j.leniency for j in f.judges}
+    assert round(proof.judge_spread(d["scores"], lean), 2) == 0.37
+
+
 def test_judging_table_matches_the_committed_proof_output():
     proof = (ROOT / "docs" / "normalization-proof.md").read_text(encoding="utf-8")
     for line in re.findall(r"^\| (\S+) \| ([\d.]+) \| ([\d.]+) \| \*{0,2}([\d.]+)\*{0,2} \| ([\d.]+) \|", JUDGING, re.M):
