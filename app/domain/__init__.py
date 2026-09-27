@@ -26,12 +26,15 @@ from .core import (  # noqa: F401
     Unauthorized,
     _as_str,
     _utcnow,
+    api_tokens,
     clean_email,
     clean_text,
     clean_ts,
     clean_url,
+    create_api_token,
     create_user,
     get_user,
+    revoke_api_token,
     user_by_email,
 )
 from .events import (  # noqa: F401

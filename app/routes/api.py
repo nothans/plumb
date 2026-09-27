@@ -216,6 +216,10 @@ class ComparisonIn(BaseModel):
     winner: str = Field(..., description="a or b's project id")
 
 
+class TokenIn(BaseModel):
+    label: str
+
+
 class WebhookIn(BaseModel):
     url: str
 
@@ -290,6 +294,38 @@ def export_event(request: Request, event_id: str):
     return transfer.export_event(conn_for(request), actor(request), event_id)
 
 
+# --- account ----------------------------------------------------------------------------
+
+
+@v1.get("/me")
+def me(request: Request):
+    """The calling account and its roles in every event."""
+    conn = conn_for(request)
+    a = domain.require_user(actor(request))
+    return {"id": a.id, "email": a.email, "name": a.name, "is_admin": a.is_admin,
+            "events": {e["id"]: sorted(domain.roles(conn, e["id"], a)) for e in domain.list_events(conn)
+                       if domain.roles(conn, e["id"], a) - {"admin"}}}
+
+
+@v1.get("/me/tokens")
+def list_tokens(request: Request):
+    """The caller's API tokens (never the tokens themselves)."""
+    return domain.api_tokens(conn_for(request), actor(request))
+
+
+@v1.post("/me/tokens", status_code=201)
+def create_token(request: Request, data: TokenIn):
+    """Create an API token for the caller. The token is returned once."""
+    return {"token": domain.create_api_token(conn_for(request), actor(request), data.label)}
+
+
+@v1.delete("/me/tokens/{hint}", status_code=204)
+def revoke_token(request: Request, hint: str):
+    """Revoke one of the caller's tokens by the first 8 characters of its hint."""
+    domain.revoke_api_token(conn_for(request), actor(request), hint)
+    return Response(status_code=204)
+
+
 # --- teams and projects ------------------------------------------------------------------------
 
 
@@ -316,6 +352,14 @@ def my_team(request: Request, event_id: str):
     if team is None:
         raise domain.NotFound("you are not on a team in this event")
     return {**dict(team), "members": [dict(m) for m in domain.team_members(conn, team["id"])]}
+
+
+@v1.post("/teams/{team_id}/invite-link")
+def reset_invite(request: Request, team_id: str):
+    """Replace the team's invite link; the old one stops working."""
+    conn = conn_for(request)
+    domain.reset_invite(conn, actor(request), team_id)
+    return {"invite_code": conn.execute("SELECT invite_code FROM teams WHERE id = ?", (team_id,)).fetchone()[0]}
 
 
 @v1.post("/teams/{team_id}/leave", status_code=204)

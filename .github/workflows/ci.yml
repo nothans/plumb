@@ -33,5 +33,7 @@ jobs:
         run: |
           python3 tools/acceptance_run.py .dogfood.toml | tee acceptance-report.ci.txt
           grep -q "verified T1 T2" acceptance-report.ci.txt
+      - name: extended checker (T3, T4)
+        run: python3 tools/acceptance_extended.py .dogfood.toml | tee acceptance-report-extended.ci.txt
       - if: always()
         run: docker compose logs

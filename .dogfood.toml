@@ -8,9 +8,11 @@
 base_url = "http://localhost:8080"
 
 [tiers]
-# The checker has no T3 checks, so its report prints T3 as claimed but not
-# verified. T3 is covered by tests/test_flows.py; README.md maps each piece.
-claimed = ["T1", "T2", "T3"]
+# run.py has checks for T1 and T2 only, so its report lists T3 and T4 as
+# claimed but not verified. tools/acceptance_extended.py checks T3 and T4 the
+# same way (plain HTTP against the running portal); its output is committed as
+# acceptance-report-extended.txt.
+claimed = ["T1", "T2", "T3", "T4"]
 pitch = "A hackathon portal whose results you can check: judge bias corrected with honest intervals, every action hash-chained, results signed."
 
 [auth]
@@ -18,6 +20,8 @@ organizer   = "Cookie: plumb_session=demo-organizer-3c1f9a7e"
 judge_a     = "Cookie: plumb_session=demo-judge-a-8b27d4c0"
 judge_b     = "Cookie: plumb_session=demo-judge-b-51e0f6a3"
 participant = "Cookie: plumb_session=demo-participant-e94a2b18"
+# Only tools/acceptance_extended.py uses this one (run.py ignores extra keys).
+admin       = "Cookie: plumb_session=demo-admin-6d0b2c94"
 
 [routes]
 gallery      = "/projects"

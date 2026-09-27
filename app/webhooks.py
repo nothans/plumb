@@ -49,6 +49,13 @@ def _allow_private() -> bool:
     return os.environ.get("PLUMB_WEBHOOKS_ALLOW_PRIVATE", "").lower() in ("1", "true", "yes")
 
 
+def _allowed_hosts() -> set[str]:
+    """PLUMB_WEBHOOKS_ALLOW_HOSTS: exact hostnames exempt from the address
+    check, for a known receiver on a private network (the demo compose file
+    names host.docker.internal so the extended checker can receive)."""
+    return {h.strip().lower() for h in os.environ.get("PLUMB_WEBHOOKS_ALLOW_HOSTS", "").split(",") if h.strip()}
+
+
 def _public(addr: ipaddress._BaseAddress) -> bool:
     if isinstance(addr, ipaddress.IPv6Address):
         if any(addr in net for net in _NAT64) or addr.teredo:
@@ -64,7 +71,7 @@ def resolve_checked(host: str, port: int, allow_private: bool | None = None) -> 
     host that resolves to a loopback, private, link-local or reserved
     address (unless PLUMB_WEBHOOKS_ALLOW_PRIVATE=1)."""
     if allow_private is None:
-        allow_private = _allow_private()
+        allow_private = _allow_private() or host.lower() in _allowed_hosts()
     infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     if not infos:
         raise ValueError(f"webhook host {host} does not resolve")

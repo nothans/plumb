@@ -113,15 +113,7 @@ def dashboard(request: Request):
 async def revoke_token(request: Request):
     data = await body(request)
     me = domain.require_user(actor(request))
-    hint = str(data.get("hint", ""))
-    conn = conn_for(request)
-    with transaction(conn):
-        rows = conn.execute("SELECT token_hash FROM api_tokens WHERE user_id = ? AND substr(token_hash, 1, 8) = ?",
-                            (me.id, hint)).fetchall()
-        if len(rows) != 1:
-            raise domain.NotFound("no such token")
-        conn.execute("DELETE FROM api_tokens WHERE token_hash = ?", (rows[0]["token_hash"],))
-        audit.append(conn, "api_token.revoked", actor_id=me.id, subject=me.id, detail={"hint": hint}, ip=me.ip)
+    domain.revoke_api_token(conn_for(request), me, str(data.get("hint", "")))
     return redirect("/me", "Token revoked.")
 
 
@@ -129,12 +121,6 @@ async def revoke_token(request: Request):
 async def create_token(request: Request):
     data = await body(request)
     me = domain.require_user(actor(request))
-    label = domain.clean_text(data.get("label"), "label", required=True, max_len=60)
-    token = "plb_" + new_token()
-    conn = conn_for(request)
-    with transaction(conn):
-        conn.execute("INSERT INTO api_tokens(token_hash, user_id, label, created_at) VALUES (?,?,?,?)",
-                     (token_hash(token), me.id, label, now()))
-        audit.append(conn, "api_token.created", actor_id=me.id, subject=me.id, detail={"label": label}, ip=me.ip)
+    token = domain.create_api_token(conn_for(request), me, str(data.get("label", "")))
     # Shown once, never stored in the clear.
     return _dashboard(request, me, token)

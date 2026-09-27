@@ -20,6 +20,7 @@ from .core import (  # noqa: F401
     _utcnow,
     clean_text,
     clean_ts,
+    require_user,
 )
 
 
@@ -50,11 +51,6 @@ def roles(conn: sqlite3.Connection, event_id: str, actor: Actor | None) -> set[s
 def is_organizer(conn: sqlite3.Connection, event_id: str, actor: Actor | None) -> bool:
     return bool(roles(conn, event_id, actor) & {"organizer", "admin"})
 
-
-def require_user(actor: Actor | None) -> Actor:
-    if actor is None:
-        raise Unauthorized("log in first")
-    return actor
 
 
 def require_organizer(conn: sqlite3.Connection, event_id: str, actor: Actor | None) -> Actor:

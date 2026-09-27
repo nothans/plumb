@@ -50,9 +50,12 @@ Without Docker: `pip install -r requirements.txt`, then `PLUMB_DEMO=1 python -m 
 
 ## What is claimed, and what is verified
 
-`.dogfood.toml` claims **T1, T2 and T3**.
-The DOGFOOD checker has checks only for T1 and T2, so the committed [`acceptance-report.txt`](acceptance-report.txt) verifies those (7 of 7 pass) and lists T3 as claimed but not machine-verified; `tests/test_flows.py` covers T3 instead, and the list below says where each piece lives.
-`tools/acceptance_run.py` is the published `run.py`, byte for byte, and `fixtures.json` sits at the repository root where it looks.
+`.dogfood.toml` claims **T1, T2, T3 and T4**, and every tier is checked by a program, not by this README:
+
+* **T1 and T2**: the DOGFOOD checker, `tools/acceptance_run.py` (the published `run.py`, byte for byte). The committed [`acceptance-report.txt`](acceptance-report.txt) shows 7 of 7 passing. It has no checks for T3 and T4, so it lists them as claimed but not verified.
+* **T3 and T4**: [`tools/acceptance_extended.py`](tools/acceptance_extended.py), written the same way: one standard-library Python file that makes plain HTTP requests to the running portal. It imports its own scratch copy of the fixtures through the bulk import API, runs a real community vote with throwaway voters from open to closed, receives the webhooks on a listener of its own, recomputes every vote seal, and verifies every signed record with a pure-Python Ed25519, so it relies on nothing the server says about itself. The committed [`acceptance-report-extended.txt`](acceptance-report-extended.txt) shows 38 of 38 passing. Run it yourself: `python3 tools/acceptance_extended.py .dogfood.toml` (about 45 seconds).
+
+CI runs both checkers against a real `docker compose up` on every push.
 
 **T1 core** (verified by the checker).
 Login and signup, roles (visitor, participant, judge, organizer, admin), events with configurable dates, tracks and prizes, teams by invite link, draft-and-edit submissions, a deadline enforced in the backend, a public gallery with search and filter.
@@ -60,10 +63,10 @@ Login and signup, roles (visitor, participant, judge, organizer, admin), events 
 **T2 judging** (verified by the checker).
 Judge invitation links; track-aware, conflict-aware, coverage-first assignment; an organizer-weighted rubric; backend role isolation; a live progress dashboard; documented cross-judge normalization with a proof ([JUDGING.md](JUDGING.md)); CSV export.
 
-**T3 public** (claimed; tested in the suite).
+**T3 public** (verified by the extended checker).
 Community voting (organizers choose: any account, or participants only); comments with moderation; results hidden during voting in a way that holds against organizers too: counts are hidden from everyone, votes enter the audit log only as seals until the vote closes (then the nonces are revealed so anyone can check the tally), an open vote cannot be shortened, and judged results cannot be published until it closes; a ballot shuffled per voter; and an answer to cheating: one vote per project, a fixed number per voter, no voting for your own team, rate limits, abuse signals (shared addresses, accounts created mid-vote, projects drawing their votes), void-with-reason, and the audit trail ([THREAT-MODEL.md](THREAT-MODEL.md)).
 
-**T4 stretch** (built; see it in the replay event).
+**T4 stretch** (verified by the extended checker; see it in the replay event).
 A JSON API for every UI action with an OpenAPI document ([`/api`](http://localhost:8080/api), [`docs/openapi.json`](docs/openapi.json)); webhooks that stream the audit log with HMAC signatures, managed from the *Integrations* tab; certificates; signed, publicly verifiable judge participation records; an embeddable gallery widget with a copyable snippet; bulk import and export in the fixture format.
 
 **Bonus challenges.**
@@ -120,7 +123,7 @@ For a real event:
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest -q                                    # 74 tests
+python -m pytest -q                                    # 75 tests
 ruff check app tests tools                             # lint
 python tools/acceptance_run.py .dogfood.toml           # the DOGFOOD checker, against a running portal
 python tools/normalization_proof.py --draws 1000       # the proof, about 30 seconds

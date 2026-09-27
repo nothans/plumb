@@ -81,6 +81,7 @@ All environment variables, all optional:
 | `PLUMB_SECURE_COOKIES` | `0` | Set to `1` behind HTTPS |
 | `PLUMB_WEBHOOKS` | `1` | Run the webhook delivery thread |
 | `PLUMB_WEBHOOKS_ALLOW_PRIVATE` | `0` | Allow webhook receivers on private networks |
+| `PLUMB_WEBHOOKS_ALLOW_HOSTS` | none | Comma-separated hostnames exempt from the private-address rule (the demo sets `host.docker.internal`) |
 | `PLUMB_FIXTURES` | `fixtures.json` | The file the demo seed imports |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | uvicorn's setting: whose `X-Forwarded-For` to believe. Set it to your reverse proxy's address; never `*` |
 
@@ -93,5 +94,5 @@ All environment variables, all optional:
 
 ## Tests
 
-`python -m pytest -q` runs 74 tests (CI runs them on every push, with `ruff` and the official checker against a real `docker compose up`): the model and Bradley-Terry on planted data, a seeded run of the normalization proof, the assigner, the seven DOGFOOD checks with the reasons behind each answer, the committed OpenAPI document, and end-to-end flows over HTTP for every role (deadline, isolation, invitation scope, voting, moderation, publication locks and verification, tamper detection, hostile input, spoofed forwarding headers, import/export round trip, webhooks), plus one regression test per finding of the second review round (`tests/test_round2.py`), and checks that every figure the documents quote is what the code computes (`tests/test_docs.py`).
+`python -m pytest -q` runs 75 tests (CI runs them on every push, with `ruff`, the official checker and the extended checker against a real `docker compose up`): the model and Bradley-Terry on planted data, a seeded run of the normalization proof, the assigner, the seven DOGFOOD checks with the reasons behind each answer, the committed OpenAPI document, and end-to-end flows over HTTP for every role (deadline, isolation, invitation scope, voting, moderation, publication locks and verification, tamper detection, hostile input, spoofed forwarding headers, import/export round trip, webhooks), plus one regression test per finding of the second review round (`tests/test_round2.py`), and checks that every figure the documents quote is what the code computes (`tests/test_docs.py`).
 `python tools/acceptance_run.py .dogfood.toml` is the official checker, byte-for-byte the published `run.py` (sha256 `aa98963841bc8e18e8e5d76f0499697c093dd3c0055f9d73a459f592f4dcf09d`).

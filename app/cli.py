@@ -33,6 +33,8 @@ DEMO_SESSIONS = {
     "judge_a": ("demo-judge-a-8b27d4c0", ""),
     "judge_b": ("demo-judge-b-51e0f6a3", ""),
     "participant": ("demo-participant-e94a2b18", "priya1@example.org"),
+    # Used by tools/acceptance_extended.py, which imports a scratch event.
+    "admin": ("demo-admin-6d0b2c94", "admin@example.org"),
 }
 DEMO_ADMIN = "admin@example.org"
 FIXTURE_EVENT = "evt_01"

@@ -126,6 +126,43 @@ def user_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()
 
 
+def require_user(actor: Actor | None) -> Actor:
+    if actor is None:
+        raise Unauthorized("log in first")
+    return actor
+
+
+def api_tokens(conn: sqlite3.Connection, actor: Actor | None) -> list[dict]:
+    actor = require_user(actor)
+    return [dict(r) for r in conn.execute(
+        "SELECT label, created_at, last_used_at, substr(token_hash, 1, 8) AS hint FROM api_tokens WHERE user_id = ? "
+        "ORDER BY created_at DESC", (actor.id,))]
+
+
+def create_api_token(conn: sqlite3.Connection, actor: Actor | None, label: str) -> str:
+    """Returns the token once; only its hash is stored."""
+    actor = require_user(actor)
+    label = clean_text(label, "label", required=True, max_len=60)
+    token = "plb_" + new_token()
+    with transaction(conn):
+        conn.execute("INSERT INTO api_tokens(token_hash, user_id, label, created_at) VALUES (?,?,?,?)",
+                     (token_hash(token), actor.id, label, now()))
+        audit.append(conn, "api_token.created", actor_id=actor.id, subject=actor.id, detail={"label": label}, ip=actor.ip)
+    return token
+
+
+def revoke_api_token(conn: sqlite3.Connection, actor: Actor | None, hint: str) -> None:
+    actor = require_user(actor)
+    hint = clean_text(hint, "hint", required=True, max_len=64)
+    with transaction(conn):
+        rows = conn.execute("SELECT token_hash FROM api_tokens WHERE user_id = ? AND substr(token_hash, 1, 8) = ?",
+                            (actor.id, hint[:8])).fetchall()
+        if len(rows) != 1:
+            raise NotFound("no such token")
+        conn.execute("DELETE FROM api_tokens WHERE token_hash = ?", (rows[0]["token_hash"],))
+        audit.append(conn, "api_token.revoked", actor_id=actor.id, subject=actor.id, detail={"hint": hint[:8]}, ip=actor.ip)
+
+
 def create_user(
     conn: sqlite3.Connection, email: str, name: str, password_hash: str | None, *,
     is_admin: bool = False, ip: str | None = None, user_id: str | None = None, actor_id: str | None = None,

@@ -1,0 +1,44 @@
+Plumb extended acceptance report (T3, T4)
+portal: http://localhost:8080
+fixtures: fixtures.json, imported as a scratch event
+
+T4  bulk import creates an event ................. PASS
+T4  webhook registered ........................... PASS
+T3  organizer opens a community vote ............. PASS
+T3  voters can sign up ........................... PASS
+T3  ballot order is random per voter ............. PASS
+T3  ballot order is stable for a voter ........... PASS
+T3  a vote counts once per project ............... PASS
+T3  votes per voter are capped ................... PASS
+T3  no voting for your own team .................. PASS
+T3  judges cannot vote ........................... PASS
+T3  anonymous visitors cannot vote ............... PASS
+T3  vote counts hidden from organizers ........... PASS
+T3  audit log does not reveal votes .............. PASS
+T3  abuse signals do not name projects ........... PASS
+T3  an open vote cannot be cut short ............. PASS
+T3  results unpublishable during voting .......... PASS
+T3  comments are posted and public ............... PASS
+T3  organizers can hide a comment ................ PASS
+T3  new accounts voting are flagged .............. PASS
+T3  organizers void votes with a reason .......... PASS
+T3  vote flooding is rate limited ................ PASS
+T3  audit trail records the moderation ........... PASS
+T3  counts appear when voting closes ............. PASS
+T3  revealed votes match the sealed log .......... PASS
+T3  a closed vote cannot reopen .................. PASS
+T4  results publish once voting closed ........... PASS
+T4  every record's Ed25519 signature verifies .... PASS
+T4  a tampered record fails verification ......... PASS
+T4  teams get certificates ....................... PASS
+T4  judge record matches the judge's own scores .. PASS
+T4  webhooks deliver every action ................ PASS
+T4  webhook deliveries are signed ................ PASS
+T4  webhook deliveries arrive in order ........... PASS
+T4  gallery widget can be framed ................. PASS
+T4  other pages refuse framing ................... PASS
+T4  export then import round-trips ............... PASS
+T4  OpenAPI covers the UI's actions .............. PASS
+T4  API tokens work and can be revoked ........... PASS
+
+checked T3 T4, verified T3 T4
