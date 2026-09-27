@@ -35,13 +35,14 @@
       {% else %}<p class="muted">One open track.</p>{% endif %}
       {% if prizes %}
       <h2>Prizes</h2>
-      <table><tbody>{% for p in prizes %}<tr><td><strong>{{ p.name }}</strong>{% if p.track_name %} <span class="tag">{{ p.track_name }}</span>{% endif %}</td><td class="muted">{{ p.description }}</td></tr>{% endfor %}</tbody></table>
+      <table><tbody>{% for p in prizes %}<tr><td><strong>{{ p.name }}</strong>{% if p.track_name %} <span class="tag">{{ p.track_name }}</span>{% endif %}</td>
+        <td>{% if winners.get(p.id) %}<a href="/projects/{{ winners[p.id].id }}">{{ winners[p.id].title }}</a>{% else %}<span class="muted">{{ p.description }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table>
       {% endif %}
       <h2>How projects are judged</h2>
       <p class="muted small">Each judge scores their assigned projects on these criteria. Scores are combined with these weights, then corrected for how harsh or generous each judge is. <a href="/events/{{ event.id }}/records">Signed records</a> are issued when results are published.</p>
       <table>
         <thead><tr><th>Criterion</th><th>Scale</th><th class="num">Weight</th></tr></thead>
-        <tbody>{% set total = criteria | sum(attribute='weight') %}{% for c in criteria %}<tr><td><strong>{{ c.name }}</strong>{% if c.description %}<br><span class="muted small">{{ c.description }}</span>{% endif %}</td><td class="nowrap">{{ c.min_value }} to {{ c.max_value }}</td><td class="num">{% if total %}{{ (100 * c.weight / total) | round | int }}%{% endif %}</td></tr>{% endfor %}</tbody>
+        <tbody>{% set total = criteria | sum(attribute='weight') %}{% for c in criteria %}<tr><td><strong>{{ c.name }}</strong>{% if c.description %}<br><span class="muted small">{{ c.description }}</span>{% endif %}</td><td class="nowrap">{{ c.min_value }} to {{ c.max_value }}</td><td class="num">{% if total %}{{ (100 * c.weight / total) | round(1) }}%{% endif %}</td></tr>{% endfor %}</tbody>
       </table>
     </div>
   </div>
@@ -49,8 +50,10 @@
   <aside class="aside-first">
     <div class="panel">
       <h2>You</h2>
-      {% if not me %}
-        <p>Log in to join a team, submit, vote or judge.</p>
+      {% if not me and phase.results_published %}
+        <p>This event is over. The results, prizes and certificates are published and signed.</p>
+      {% elif not me %}
+        <p>Log in to {% if phase.submissions != 'closed' %}join a team, submit, {% endif %}vote or judge.</p>
         <div class="actions"><a class="btn primary" href="/signup?next=/events/{{ event.id }}">Sign up</a><a class="btn" href="/login?next=/events/{{ event.id }}">Log in</a></div>
       {% else %}
         {% if 'judge' in roles %}

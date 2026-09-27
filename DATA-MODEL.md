@@ -44,7 +44,7 @@ users ──< sessions            users ──< api_tokens
 | `reviews`, `review_scores` | A judge's review and its per-criterion values | One review per `(judge, project)`, and a composite foreign key to `assignments`, so the database refuses a review nobody assigned. Values live in their own table so the rubric can differ between events without schema changes. |
 | `comparisons` | A judge's pick between two assigned projects (pairwise mode) | Primary key `(judge, project_a, project_b)` with `project_a < project_b`: one answer per pair per judge. The winner must be one of the two (CHECK). |
 | `awards` | Who won which prize | Written once, at publication, in the same transaction that signs the results; the signed record carries the same list. |
-| `votes` | A community vote | Primary key `(voter, project)`: one vote per project per voter. The per-voter limit is enforced in a transaction. |
+| `votes` | A community vote | Primary key `(voter, project)`: one vote per project per voter. The per-voter limit is enforced in a transaction. `nonce` is random; the audit log records only `sha256(nonce:project)` until voting closes, when the nonces are revealed. |
 | `comments` | A comment on a project | Hidden, never deleted, by organizers, with a reason. |
 | `audit_log` | One state change | See below. |
 | `records` | A signed statement | The exact signed canonical JSON, its signature and key id. Never updated. |
@@ -83,5 +83,5 @@ Published results records carry the chain head, which pins history up to publica
 
 `schema.sql` always describes the current shape and is idempotent (`CREATE ... IF NOT EXISTS`), so a new database needs nothing else.
 An existing database stores its version in `meta.schema_version`; on boot, `db.init_schema` runs every numbered migration in `db.MIGRATIONS` above that version, each in its own transaction, then applies `schema.sql` for anything new (whole new tables need no migration).
-The current version is 2 (version 2 added the `pairwise` setting to events).
+The current version is 4: version 2 added the `pairwise` setting to events, 3 the vote `nonce`, 4 `events.rubric_locked_at`.
 Upgrading is: back up, pull the new image, start it.

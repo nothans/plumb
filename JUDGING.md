@@ -64,7 +64,14 @@ It is minimised over `log(lambda)` in [-12, 12] by a 25-point grid followed by g
 Given `lambda`, Henderson's mixed-model equations `(X'X + lambda * D_J) m = X'y` give the estimates `m`, and `var_noise * (X'X + lambda * D_J)^-1` their joint covariance.
 A fit on the fixture data takes about 6 ms.
 
-**Per project** Plumb reports the adjusted score `quality[p]`, a 90% interval, the raw mean, how far its judges' lean moved it ("its judges ran 3.1 harsh"), and `P(beats next)`: the probability that its true quality exceeds that of the project ranked just below, `Phi(diff / sd(diff))`, from the joint covariance (shared judges are accounted for, not treated as independent).
+**Per project** Plumb reports the adjusted score `quality[p]`, a 90% interval, the raw mean, how far its judges' lean moved it ("its judges scored 1.2 points high"), and `P(beats next)`: the probability that its true quality exceeds that of the project ranked just below.
+
+**Probabilities are empirical Bayes.**
+The adjusted scores are deliberately not shrunk (see section 4).
+But a probability that one project truly beats another has to account for how alike projects are: when the true differences are small next to the noise, a gap between two estimates is mostly noise.
+So every probability Plumb states ("beats next", track leads, prize confidence) comes from a posterior that puts a Normal(mean, spread^2) prior on true quality, with the spread estimated from the data (the variance of the adjusted scores minus their average estimation variance), combined with the estimates' full joint covariance (so shared judges are accounted for, not treated as independent): `P(a beats b) = Phi(diff_post / sd(diff_post))`.
+Section 5 shows why this is necessary: without it, a stated 84% came true only 60% of the time on fixture-like data.
+Every probability is shown with one vocabulary: under 60% is a *tie*, 60 to 75% *leaning*, 75 to 90% *likely*, 90% and up *clear*.
 
 **Per judge** Plumb reports the estimated lean with its standard error, and flags: `flat` (every review identical), `few-reviews` (fewer than 3, so the estimate leans on the prior), and `harsh` or `generous` when the lean is more than 1.645 posterior standard deviations from zero (a Bayesian reading of the estimate, not a frequentist test that the lean is exactly zero).
 
@@ -89,14 +96,14 @@ The fixture graph is one piece.
 
 **Why projects are fixed effects (not shrunk):** project quality is what the prizes are decided on. Shrinking it would pull a project with two reviews toward the middle harder than one with five, marking a team down for how many judges happened to see it. With projects fixed, fewer reviews show up as a wider interval instead of a lower score.
 
-**What the flat judge becomes:** `jdg_07` is not dropped. Their three identical scores still say "these are all about a 75", which, compared with other judges on the same projects, estimates their lean (+1.8 points). Their reviews carry no information about the order of their own three projects, and the organizer dashboard flags them for a conversation.
+**What the flat judge becomes:** `jdg_07` is not dropped. Their three identical scores still say "these are all about a 75", which, compared with other judges on the same projects, estimates their lean (+1.7 points). Their reviews carry no information about the order of their own three projects, and the organizer dashboard flags them for a conversation.
 
 ## 5. The normalization proof
 
 We cannot know the true quality of the fixture projects, so `tools/normalization_proof.py` plants one.
 It keeps the fixture's real judge-project graph (122 reviews after leaving out the duplicate's 4, 40 projects, 30 judges, unbalanced exactly as delivered), invents true qualities (sd 12) and judge leans (sd 8), draws scores with noise (sd 10), and asks each method to recover the planted truth.
 
-Six scenarios test the assumptions:
+Seven scenarios test the assumptions:
 
 * `additive`: judges differ by a constant lean (the model's own assumption).
 * `scale`: judges also stretch or squash their scores, which the model does not model.
@@ -104,6 +111,7 @@ Six scenarios test the assumptions:
 * `track`: tracks differ in true quality and judges stay in their tracks, as the fixture judges do. This is the argument against z-scores, tested.
 * `discrete`: every review is three whole-number 1 to 5 criteria, with the floor and ceiling that implies, combined the way Plumb combines a rubric.
 * `no-bias`: every judge is fair. Does the correction cost anything?
+* `fixture`: calibrated to what the model finds in the real fixture reviews: judge lean sd 4.3, noise sd 15.9, and a small true spread between projects (sd 4). This is the regime Plumb actually faces on this data.
 
 Four methods: `raw` means, per-judge `zscore`s, `plumb`'s model, and `pairwise`: Bradley-Terry on the preferences implied within each judge's scores (section 8), which ignores every judge's scale.
 
@@ -112,31 +120,55 @@ The rank correlation with the truth (Spearman), and the paired difference from r
 
 | scenario | raw | zscore | plumb | pairwise | plumb vs raw | plumb 90% coverage |
 |---|---:|---:|---:|---:|---:|---:|
-| additive | 0.827 | 0.768 | **0.845** | 0.763 | +0.018 (±0.002) | 91% |
-| scale | 0.836 | 0.769 | **0.849** | 0.761 | +0.014 (±0.002) | 90% |
-| flat | 0.807 | 0.766 | **0.830** | 0.760 | +0.023 (±0.002) | 90% |
-| track | 0.865 | 0.704 | **0.878** | 0.758 | +0.013 (±0.001) | 91% |
-| discrete | 0.841 | 0.794 | **0.862** | 0.804 | +0.021 (±0.002) | 91% |
-| no-bias | 0.873 | 0.769 | 0.873 | 0.764 | -0.000 (±0.000) | 90% |
+| additive | 0.823 | 0.772 | **0.841** | 0.763 | +0.018 (±0.002) | 90% |
+| scale | 0.834 | 0.770 | **0.849** | 0.761 | +0.015 (±0.002) | 90% |
+| flat | 0.808 | 0.771 | **0.828** | 0.762 | +0.021 (±0.002) | 90% |
+| track | 0.862 | 0.704 | **0.877** | 0.757 | +0.014 (±0.002) | 90% |
+| discrete | 0.839 | 0.796 | **0.861** | 0.805 | +0.022 (±0.002) | 91% |
+| no-bias | 0.875 | 0.775 | 0.875 | 0.765 | -0.000 (±0.000) | 90% |
+| fixture | 0.359 | 0.307 | 0.359 | 0.274 | -0.000 (±0.001) | 90% |
 
 What this shows:
 
-* **Plumb ranks best in every scenario with biased judges**, including the two it does not model (`scale`, `discrete`), and every gain is many times its Monte Carlo error. It ties raw means exactly when judges are fair, so the correction costs nothing when it is not needed.
-* **Z-scores fall apart when tracks differ** (0.704 against 0.865 for doing nothing at all), which is the situation track-based assignment creates. They are worse than raw means in every scenario.
-* **The intervals are honest.** Plumb's 90% intervals contain the planted truth 90 to 91% of the time in all six scenarios. The "beats next" column, the award probabilities and the certificates all rest on this.
+* **Plumb ranks best in every scenario where judges differ by a meaningful amount**, including the two it does not model (`scale`, `discrete`), and every gain is many times its Monte Carlo error. It ties raw means when judges are fair (`no-bias`) or barely differ (`fixture`), so the correction costs nothing when it is not needed.
+* **Z-scores fall apart when tracks differ** (0.704 against 0.862 for doing nothing at all), which is the situation track-based assignment creates. They are worse than raw means in every scenario.
+* **The intervals are honest.** Plumb's 90% intervals contain the planted truth 90 to 91% of the time in all seven scenarios. The "beats next" column, the award probabilities and the certificates all rest on this.
 * **The gains are modest.** With about three reviews per project, no method can do much better. The honest thing is to say how uncertain the ranking is, which is what the intervals are for.
 * **Scale-free is not better here.** Implied pairwise preferences throw away the size of every score difference, and on a graph this sparse that costs more than removing each judge's scale gains. It is kept as a cross-check, not as the ranking.
 
-On rmse (error on the score scale) the picture is the same except under `scale`, where z-scores edge out Plumb (7.22 against 7.28) because rmse rewards matching each judge's stretching; the rank correlation, which is what prizes need, favours Plumb there too.
+On rmse (error on the score scale) the picture is the same except under `scale`, where z-scores edge out Plumb (7.18 against 7.33) because rmse rewards matching each judge's stretching; the rank correlation, which is what prizes need, favours Plumb there too.
+
+**The fixture regime is humbling.**
+With the real data's noise, no method recovers the true order well (rank correlation 0.36 for the best of them), and judge lean is too small there for correcting it to change much.
+That is not a failure of the method; it is what 3 reviews per project with this much disagreement can support.
+The job of the engine in that regime is to say so, which is what the next check is about.
+
+**Calibration of the probabilities.**
+Across every draw, every adjacent pair in Plumb's ranking gets a "beats next" probability.
+Binned, the share of pairs whose true order matched should equal the stated probability.
+The first version of Plumb computed these from the unshrunk estimates, and the check caught it overstating confidence badly in the fixture regime (stated 84%, observed 60%).
+With the empirical-Bayes posterior (section 3) the same check reads:
+
+| scenario | stated 50-60% | stated 60-70% | stated 70-80% | stated 80-90% | stated 90%+ |
+|---|---:|---:|---:|---:|---:|
+| additive | 0.547 → 0.544 | 0.641 → 0.648 | 0.740 → 0.741 | 0.840 → 0.821 | 0.943 → 0.958 |
+| discrete | 0.545 → 0.549 | 0.642 → 0.640 | 0.741 → 0.739 | 0.841 → 0.822 | 0.940 → 0.946 |
+| no-bias | 0.539 → 0.538 | 0.637 → 0.629 | 0.742 → 0.759 | 0.843 → 0.855 | 0.946 → 0.929 |
+| fixture | 0.519 → 0.521 | 0.632 → 0.598 | 0.733 → 0.675 | 0.833 → 0.750 (16 pairs) | none stated |
+| track | 0.548 → 0.546 | 0.643 → 0.577 | 0.742 → 0.658 | 0.840 → 0.761 | 0.947 → 0.939 |
+
+(Stated → observed. Full table, including `scale` and `flat`, in [`docs/normalization-proof.md`](docs/normalization-proof.md).)
+Close to calibrated where the model's assumptions hold, and still somewhat optimistic in two cases: when tracks differ in quality (the prior treats all projects as alike, so it under-shrinks pairs from different tracks) and in the 70% and higher bins of the fixture regime.
+Those are stated here rather than hidden; a per-track prior is the natural next step.
 
 `tests/test_proof.py` re-runs a small seeded version on every test run and fails if Plumb stops beating raw means, raw means stop beating z-scores, or the intervals stop covering 86 to 94%.
 
 ## 6. What the fixture data says
 
-On a fresh boot, the seeded fixture event reports: typical judge lean plus or minus 4.3 points, review-to-review noise plus or minus 15.9 points (on 0 to 100), and an estimated true spread between projects of about zero once estimation noise is removed.
+On a fresh boot, the seeded fixture event (121 reviews: the 126 in the file minus the 5 of the superseded duplicate) reports: typical judge lean plus or minus 3.9 points, review-to-review noise plus or minus 15.1 points (on 0 to 100), and no detectable true spread between projects once estimation noise is removed.
 In plain words: in the fixture reviews, two judges looking at the same project disagree far more than projects differ from each other.
-The adjusted ranking moves 26 of 40 projects relative to raw means (at most 6 places), every adjacent pair has `P(beats next)` between 50% and 64%, and 90% intervals are 12 to 19 points wide on each side.
-Within tracks, the model is between 50% and 80% sure that each track's leader is truly ahead of its runner-up.
+Correcting for judges moves 25 of 40 projects relative to raw means (at most 5 places), by between -0.8 and +1.2 points each, and 90% intervals are 11.5 to 18 points wide on each side.
+Because no true spread is detectable, every calibrated probability is a coin flip: each "beats next", each track lead and each prize reads 50%, a *tie*.
 
 A portal that printed a confident 1-to-40 ranking from this data would be telling organizers something the data does not support.
 Plumb prints the ranking, shows the intervals, warns on the results page when projects are this hard to separate, and shows the award probabilities at publication, so the organizer knows to treat neighbouring ranks as ties, ask for more reviews, or share a prize.
@@ -150,7 +182,7 @@ That warning is the most important output of the judging engine on this dataset.
 | Judge with one review (`jdg_01`, `jdg_23`) | Kept; lean shrunk toward typical; flagged `few-reviews` |
 | Project with 2 reviews next to one with 5 | Same model, wider interval for the 2-review project, no shrinkage of its score |
 | Unfinished review batches | The dashboard leads with the projects below target; auto-assign tops them up |
-| Duplicate submission (`prj_07`, `prj_41`: same team, title and repo, 13 minutes apart) | Imported, the later one marked as the duplicate, excluded from gallery, ballot and ranking, shown on the Integrity page, where the organizer can keep the other one instead. Reviews are never moved between entries: a judge scored what they saw |
+| Duplicate submission (`prj_07`, `prj_41`: same team, title and repo, 13.5 hours apart; the later one three minutes before the deadline) | Imported with the team's latest submission as its entry (its final word before the deadline) and the earlier one marked as the duplicate, excluded from gallery, ballot and ranking. The organizer dashboard and the publish checklist ask a person to confirm or swap it. Reviews are never moved between entries: a judge scored what they saw |
 | Teams sharing a name (three "StillTrail", two "AmberSwitch", two "OpenSignal") | Allowed on import (they are different teams) and reported; new teams in Plumb cannot take a used name |
 | Review missing a weighted criterion | Excluded from the ranking and counted on the results page |
 | Project with no reviews | Not ranked; listed as unreviewed |
@@ -167,26 +199,37 @@ Plumb chooses the pair whose order is least certain for that judge (from their o
 Comparisons are fitted with a Bradley-Terry model, `P(i beats j) = 1 / (1 + exp(-(s_i - s_j)))`, by penalized maximum likelihood (Newton's method) with a Normal(0, 2^2) prior on each strength.
 The prior pins the free overall level and keeps a project that won every comparison at a finite strength; standard errors come from the inverse of the penalized observed information.
 
-The organizer's results page shows the Bradley-Terry ranking from direct comparisons, and the same estimator on the preferences implied by rubric scores, each with its Spearman agreement with the model's ranking (0.80 for the implied preferences on the fixture data).
+The organizer's results page shows the Bradley-Terry ranking from direct comparisons, and the same estimator on the preferences implied by rubric scores, each with its Spearman agreement with the model's ranking (0.87 for the implied preferences on the fixture data), and flags any project whose pairwise and score ranks differ by 10 or more places.
+A judge who finds a pair too close to call can skip it.
 Scores remain the ranking of record; pairwise is a second opinion that answers "would the judges' head-to-head picks agree?".
 
 ## 9. Winners
 
 At publication the organizer confirms a winner for every prize.
 Plumb suggests one: a track prize goes to the track leader, overall prizes go down the overall ranking in prize order.
-Next to each suggestion it shows how sure the model is that the winner beats the closest rival (the runner-up, or for later overall prizes the best project that has not already won one), and warns below 75%.
+Next to each suggestion it shows how sure the model is that the winner beats the closest rival (the runner-up, or for later overall prizes the best project that has not already won one), in the tie / leaning / likely / clear vocabulary.
 The organizer can pick someone else; the signed record then says the organizers chose a project other than the top-ranked candidate, so an override is visible, not hidden.
+No project can win two overall prizes, and each later overall suggestion follows the choices already made.
+On the fixture data every prize is a *tie*, and the results page says exactly that next to each winner.
+
+**The rubric.**
+Organizers can lock the rubric (typically as judging opens) so nobody can reweight after seeing the live ranking.
+Whether it was locked, and how many times it was reweighted after the first review, is part of the signed results.
 
 ## 10. Community votes are separate
 
-The community vote is its own tally with its own rules (per-voter shuffled ballots, a fixed number of votes each, counts hidden from everyone, organizers included, until voting closes).
-It is never mixed into the judged ranking, and judged results cannot be published while the vote is open.
+The community vote is its own tally with its own rules: per-voter shuffled ballots, a fixed number of votes each, and secrecy that holds against organizers too.
+While voting is open, counts are hidden from everyone, and each vote enters the audit log only as a seal, `sha256(nonce:project)`, so the log (and any webhook streaming it) proves a vote was cast without saying for what.
+An open vote can be extended but never shortened or switched off, so nobody can end it at a convenient moment.
+After it closes, the nonces are revealed: anyone can recompute every seal, find it in the audit log, and check the tally against history.
+The vote is never mixed into the judged ranking, and judged results cannot be published until it has closed.
 
 ## 11. Publication and verification
 
-Publishing freezes the ranking into a signed record (Ed25519) that includes the awards, the rubric weights, the fitted judge lean, noise and spread, every project's interval and "beats next", and the head hash of the audit log at that moment.
+Publishing freezes the ranking into a signed record (Ed25519) that includes the awards, the rubric weights and their history, the fitted judge lean, noise and spread, every project's interval and "beats next", and the head hash of the audit log at that moment.
+The issuer in every record is the configured public address (`PLUMB_BASE_URL`), never a request's Host header; publishing is refused until it is set.
 Each judge gets a signed participation record with a SHA-256 digest of their own reviews, which they can recompute from their export; each team gets a signed certificate with its rank, interval and any prize.
-After publication the schedule, reviews, rubric, duplicates and disqualifications are frozen, and the public results page is rendered from the signed record itself, so what the public reads is exactly what was signed.
+After publication the schedule, name, tracks, prizes, reviews, rubric, duplicates and disqualifications are frozen, and the public results page is rendered from the signed record itself, so what the public reads is exactly what was signed.
 `tools/verify_record.py` checks any record offline against a pinned public key.
 
 ## 12. Limitations
@@ -194,4 +237,5 @@ After publication the schedule, reviews, rubric, duplicates and disqualification
 * The model is additive. Judges who stretch or squash their scores are not modelled; with three reviews per judge on average a per-judge scale is not estimable, and the proof shows the additive model still ranks best when judges do this.
 * Gaussian noise is assumed. Scores are bounded and discrete; the `discrete` scenario shows the intervals stay calibrated anyway.
 * Lean is assumed constant across criteria and across the judging window.
+* Probabilities use one prior for all projects; when tracks differ in quality they are somewhat optimistic for pairs from different tracks (section 5).
 * The model cannot tell a lenient judge from a judge who drew better projects unless those projects are also seen by other judges. Coverage and bridging assignments make the difference identifiable, which is why the assigner prefers them.

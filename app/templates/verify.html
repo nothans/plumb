@@ -10,7 +10,12 @@
   <div class="panel">
     {% if result %}
       {% if result.ok %}
-        <div class="notice" role="status"><strong>Valid.</strong> This portal signed exactly this payload.</div>
+        {% set b = result.body %}
+        <div class="notice" role="status"><strong>Valid.</strong> This portal signed exactly this payload:
+          {% if b.type == 'plumb.team/v1' %}a certificate for {{ b.team.name }} ({{ b.project.title }}) at {{ b.event.name }}{% if b.placement %}, rank {{ b.placement.rank }} of {{ b.placement.of }}{% endif %}{% if b.awards %}, {{ b.awards | join(", ") }}{% endif %}.
+          {% elif b.type == 'plumb.judge/v1' %}{{ b.judge.name }} judged {{ b.event.name }} with {{ b.reviews }} review{{ '' if b.reviews == 1 else 's' }}.
+          {% elif b.type == 'plumb.results/v1' %}the results of {{ b.event.name }}: {{ b.ranking | length }} projects{% if b.awards %}, {{ b.awards | length }} prizes{% endif %}.{% endif %}
+          <a href="/records/{{ b.id }}">Open the record</a></div>
         <pre class="json">{{ result.body | tojson(indent=2) }}</pre>
       {% else %}
         <div class="alert" role="alert"><strong>Not valid.</strong> {{ result.reason | capitalize }}.</div>
@@ -24,7 +29,7 @@
   <aside class="panel">
     <h2>Do not trust us</h2>
     <p class="small">A page on this server saying "valid" is only as good as the server. To check without it, save the envelope and run the standalone checker from the repository against the key you pinned earlier:</p>
-    <pre class="json">python tools/verify_record.py envelope.json \
+    <pre class="json wrap">python tools/verify_record.py envelope.json \
   --key {{ request.app.state.signer.public_key_b64 }}</pre>
     <p class="small">Key id <code>{{ request.app.state.signer.key_id }}</code>, also at <a href="/.well-known/plumb-key.json">/.well-known/plumb-key.json</a>.</p>
   </aside>

@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import getpass
 import json
-from secrets import token_hex
 import sqlite3
 import sys
 from datetime import timedelta
+from secrets import token_hex
 
 from . import audit, domain, records, transfer
 from .config import Settings, load_settings
@@ -191,7 +191,7 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
         domain.remove_votes_of(conn, org, REPLAY_EVENT, uid, "account made mid-vote, same address as four others")
 
     # A few direct comparisons from the three busiest judges, as their own scores order them.
-    from . import pairwise, normalize
+    from . import normalize, pairwise
     crit = domain.criteria(conn, REPLAY_EVENT)
     by_judge: dict[str, list] = {}
     for r in domain.reviews_for(conn, event_id=REPLAY_EVENT):

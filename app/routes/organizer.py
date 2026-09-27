@@ -9,8 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .. import audit, domain, records, transfer
-from ..webhooks import check_destination
 from ..web import actor, base_url, body, conn_for, redirect, render, signing_base_url
+from ..webhooks import check_destination
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
 
@@ -94,11 +94,12 @@ def dashboard(request: Request, event_id: str, all: int = 0):
     me = actor(request)
     prog = domain.progress(conn, me, event_id)
     event = domain.get_event(conn, event_id)
-    dups = [d for d in domain.duplicate_candidates(conn, event_id) if not d["resolved"]]
+    dups = [d for d in domain.duplicate_candidates(conn, event_id) if not d["confirmed"]]
     res = domain.compute_results(conn, event_id)
     flagged = [j for j in res["fit"].judges if set(j.flags) & {"flat", "harsh", "generous"}]
     return render(request, "organizer/dashboard.html", event=event, phase=domain.phase(event), prog=prog,
                   duplicates=dups, flagged=flagged, names=res["names"], turnout=domain.turnout(conn, event_id),
+                  signals=domain.abuse_signals(conn, me, event_id),
                   chain=audit.verify_chain(conn), show_all=bool(all),
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
@@ -227,7 +228,15 @@ def rubric(request: Request, event_id: str):
     domain.require_organizer(conn, event_id, actor(request))
     has_reviews = conn.execute("SELECT 1 FROM reviews WHERE event_id = ?", (event_id,)).fetchone() is not None
     return render(request, "organizer/rubric.html", event=domain.get_event(conn, event_id),
-                  criteria=domain.criteria(conn, event_id), has_reviews=has_reviews)
+                  criteria=domain.criteria(conn, event_id), has_reviews=has_reviews,
+                  history=domain.rubric_history(conn, event_id))
+
+
+@router.post("/events/{event_id}/manage/rubric/lock")
+async def lock_rubric(request: Request, event_id: str):
+    await body(request)
+    domain.lock_rubric(conn_for(request), actor(request), event_id)
+    return redirect(f"/events/{event_id}/manage/rubric", "Rubric locked. The weights can no longer change.")
 
 
 @router.post("/events/{event_id}/manage/rubric")
@@ -259,8 +268,10 @@ def live_results(request: Request, event_id: str):
     event = domain.get_event(conn, event_id)
     pw = domain.pairwise_results(conn, actor(request), event_id)
     suggestions = domain.default_awards(conn, event_id, res["fit"], res["projects"]) if res["fit"].identifiable else []
+    open_duplicates = [d for d in domain.duplicate_candidates(conn, event_id) if not d["confirmed"]]
     return render(request, "organizer/results.html", event=event, phase=domain.phase(event), res=res, fit=res["fit"],
                   pw=pw, suggestions=suggestions, leaders=domain.track_leaders(res["fit"], res["projects"]),
+                  open_duplicates=open_duplicates,
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
 

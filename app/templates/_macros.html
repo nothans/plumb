@@ -23,12 +23,22 @@
 </svg>
 {% endmacro %}
 
+{# One vocabulary for every probability Plumb shows: beats next, track
+   leads, prize winners. Under 60% is a statistical tie. #}
+{% macro certainty(p, against=none) %}
+{%- if p is none -%}<span class="muted">&mdash;</span>
+{%- elif p < 0.6 -%}<span class="tag warn">{{ p | pct }} &middot; tie{% if against %} with {{ against }}{% endif %}</span>
+{%- elif p < 0.75 -%}<span class="tag">{{ p | pct }} &middot; leaning</span>
+{%- elif p < 0.9 -%}<span class="tag accent">{{ p | pct }} &middot; likely</span>
+{%- else -%}<span class="tag ok">{{ p | pct }} &middot; clear</span>{%- endif -%}
+{% endmacro %}
+
 {% macro interval_legend() %}
 <div class="legend">
   <span><svg width="18" height="12" aria-hidden="true"><rect x="0" y="2" width="18" height="8" rx="2" class="iv-band"/></svg>90% interval</span>
   <span><svg width="6" height="14" aria-hidden="true"><rect x="1.5" y="0" width="3" height="14" class="iv-pt"/></svg>adjusted score</span>
   <span><svg width="8" height="8" aria-hidden="true"><circle cx="4" cy="4" r="2.8" class="iv-raw"/></svg>raw average</span>
-  <span>Gridlines at 25, 50, 75. <strong>Beats next</strong> is the chance a project truly scores above the one ranked just below it; 50% is a coin flip.</span>
+  <span><strong>Beats next</strong> is the chance a project truly scores above the one ranked just below it: under 60% is a <em>tie</em>, 60 to 75% <em>leaning</em>, 75 to 90% <em>likely</em>, 90% and up <em>clear</em>.</span>
 </div>
 {% endmacro %}
 

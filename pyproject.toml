@@ -1,0 +1,19 @@
+[project]
+name = "plumb"
+version = "0.1.0"
+description = "A hackathon submission and judging portal whose results you can check."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501: long SQL strings read better unbroken. B905: zip() over lists we just built.
+# B008: FastAPI's Security()/Depends() in defaults is the framework's idiom.
+ignore = ["E501", "B905", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

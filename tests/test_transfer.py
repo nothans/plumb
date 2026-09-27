@@ -25,7 +25,8 @@ def test_round_trip_keeps_duplicate_decisions_drafts_and_every_field(app, organi
     assert r.status_code == 201, r.text
 
     copy = admin.get("/events/evt_copy/export/event.json").json()
-    by_title = lambda d: {(p["title"], p["submitted_at"]): p for p in d["projects"]}
+    def by_title(d):
+        return {(p["title"], p["submitted_at"]): p for p in d["projects"]}
     orig, new = by_title(doc), by_title(copy)
     assert orig.keys() == new.keys()
     for key, p in orig.items():

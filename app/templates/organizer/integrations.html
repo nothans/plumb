@@ -6,10 +6,11 @@
 
 <div class="panel">
   <h2 class="mt-0">Webhooks</h2>
-  <p>Every audited action in this event (submissions, reviews, assignments, votes, publication, and the rest) is POSTed to each URL below, in order, as JSON. Each delivery carries <code>X-Plumb-Signature: sha256=&lt;HMAC of the body with the webhook's secret&gt;</code> so the receiver can reject forgeries. A failing receiver is retried with backoff and never skipped. Addresses on private networks are refused.</p>
+  <p>Every audited action in this event (submissions, reviews, assignments, votes, publication, and the rest) is POSTed to each URL below, in order, as JSON. Each delivery carries <code class="nowrap">X-Plumb-Signature</code>: <code>sha256=&lt;HMAC of the body with the webhook's secret&gt;</code> so the receiver can reject forgeries. A failing receiver is retried with backoff and never skipped. Addresses on private networks are refused.</p>
   {% if new_secret %}
   <div class="notice" role="status">Webhook added. Its secret is shown once: <code>{{ new_secret }}</code></div>
   {% endif %}
+  {% if not hooks %}<p class="muted">No webhooks yet.</p>{% endif %}
   {% if hooks %}
   <div class="table-wrap"><table>
     <thead><tr><th>URL</th><th class="num">Delivered up to</th><th>Last attempt</th><th></th></tr></thead>

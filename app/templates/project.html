@@ -21,7 +21,7 @@
       <form class="inline" method="post" action="/projects/{{ project.id }}/unsubmit">{{ csrf_field() }}<button type="submit">Move back to draft</button></form>
       {% endif %}
     {% endif %}
-    {% if can_vote %}
+    {% if can_vote and not is_judge %}
       <form class="inline" method="post" action="/projects/{{ project.id }}/vote">{{ csrf_field() }}
         {% if voted %}<input type="hidden" name="action" value="withdraw"><button type="submit">Withdraw your vote</button>
         {% else %}<button class="primary" type="submit">Vote for this</button>{% endif %}

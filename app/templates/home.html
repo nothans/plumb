@@ -14,15 +14,16 @@
 {% if events %}
 <div class="table-wrap panel">
 <table>
-  <thead><tr><th>Event</th><th>Status</th><th>Submissions close</th><th class="num">Projects</th><th>You</th></tr></thead>
+  <thead><tr><th>Event</th><th class="col-opt">Status</th><th class="col-opt">Submissions close</th><th class="num">Projects</th><th class="col-opt">You</th></tr></thead>
   <tbody>
   {% for row in events %}{% set e = row.event %}
   <tr>
-    <td><a href="/events/{{ e.id }}"><strong>{{ e.name }}</strong></a>{% if e.tagline %}<br><span class="muted small">{{ e.tagline }}</span>{% endif %}</td>
-    <td>{{ phase_tags(row.phase) }}</td>
-    <td class="nowrap">{{ e.submissions_close | ts }}</td>
+    <td><a href="/events/{{ e.id }}"><strong>{{ e.name }}</strong></a>{% if e.tagline %}<br><span class="muted small">{{ e.tagline }}</span>{% endif %}
+      <div class="only-mobile actions">{{ phase_tags(row.phase) }}</div></td>
+    <td class="col-opt"><div class="actions">{{ phase_tags(row.phase) }}</div></td>
+    <td class="nowrap col-opt">{{ e.submissions_close | ts }}</td>
     <td class="num">{{ row.projects }}</td>
-    <td>{% for r in row.roles | sort %}<span class="tag">{{ r }}</span> {% endfor %}</td>
+    <td class="col-opt">{% for r in row.roles | sort %}<span class="tag">{{ r }}</span> {% endfor %}</td>
   </tr>
   {% endfor %}
   </tbody>

@@ -1,19 +1,24 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf_field with context %}
+{% from "_macros.html" import csrf_field, certainty with context %}
 {% block title %}Live results · {{ event.name }}{% endblock %}
 {% block content %}
 {% set active = 'results' %}{% include "organizer/_nav.html" %}
 <div class="panel">
   <div class="page-head mb-0">
     <div>
+      {% if event.results_published_at %}
+      <h2 class="mt-0">Results (published {{ event.results_published_at | ts }})</h2>
+      <p>This is recomputed from the frozen reviews and rubric, so it matches the <a href="/events/{{ event.id }}/results">signed results</a>. Nothing that affects it can change any more.</p>
+      {% else %}
       <h2 class="mt-0">Live results</h2>
       <p>Only organizers see this until you publish. Publishing freezes the ranking into a signed record, issues a signed record to every judge and a certificate to every team, and locks reviews.</p>
+      {% endif %}
     </div>
     <div class="actions">
       <a class="btn" href="/events/{{ event.id }}/export/results.csv">Results CSV</a>
       {% if event.results_published_at %}<a class="btn primary" href="/events/{{ event.id }}/results">Published results</a>
       {% elif phase.submissions == 'closed' and fit.projects %}
-      <a class="btn primary" href="#publish">Publish&hellip;</a>
+      <a class="btn {{ 'primary' if phase.voting not in ('open', 'upcoming') and fit.identifiable else '' }}" href="#publish">Publish&hellip;</a>
       {% endif %}
     </div>
   </div>
@@ -30,10 +35,10 @@
       <td>{{ tracks.get(tid, tid) }}</td>
       <td><a href="/projects/{{ info.leader }}">{{ res.projects[info.leader].title }}</a></td>
       <td>{% if info.runner_up %}<a href="/projects/{{ info.runner_up }}">{{ res.projects[info.runner_up].title }}</a>{% else %}&mdash;{% endif %}</td>
-      <td class="num">{% if info.p is not none %}{% if info.p < 0.75 %}<span class="tag warn">{{ info.p | pct }}</span>{% else %}{{ info.p | pct }}{% endif %}{% else %}&mdash;{% endif %}</td>
+      <td class="num">{{ certainty(info.p) }}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
-  <p class="small muted">Below 75%, the model cannot say with confidence that the leader is better; consider more reviews for those two projects, or a shared prize.</p>
+  <p class="small muted">A <em>tie</em> means the reviews cannot tell the leader from the runner-up: consider more reviews for those two projects, or a shared prize.</p>
 </div>
 {% endif %}
 
@@ -48,7 +53,8 @@
   <p>Publishing cannot be undone. It signs this ranking, issues a signed record to each judge and a certificate to each team, makes results public, and locks reviews, the rubric, the schedule, duplicates and disqualifications.</p>
   {% set short = res.unreviewed | length %}
   <ul class="small">
-    {% if phase.voting == 'open' %}<li><strong>The community vote is still open</strong> until {{ event.voting_close | ts }}; publishing is refused until it closes.</li>{% endif %}
+    {% if phase.voting in ('open', 'upcoming') %}<li><strong>The community vote runs until {{ event.voting_close | ts }}</strong>; publishing is refused until it closes, so judged results cannot sway it.</li>{% endif %}
+    {% for d in open_duplicates %}<li>Duplicate submission <a href="/events/{{ event.id }}/manage/integrity">{{ d.first.title }}</a> was resolved automatically (the later entry counts); confirm or swap it before publishing, since publishing freezes it.</li>{% endfor %}
     {% if short %}<li>{{ short }} eligible project{{ '' if short == 1 else 's' }} ha{{ 's' if short == 1 else 've' }} no reviews and will not be ranked.</li>{% endif %}
     {% if fit.identifiable and fit.spread_sd < fit.noise_sd / 3 %}<li>The reviews barely separate the projects; the certificates will carry each team's interval.</li>{% endif %}
     {% if not fit.identifiable %}<li><strong>Too few reviews to estimate uncertainty;</strong> publishing is refused until projects have more reviews.</li>{% endif %}
@@ -69,13 +75,14 @@
                 <option value="">Not awarded</option>
                 {% for pid in pool %}<option value="{{ pid }}" {% if pid == s.project %}selected{% endif %}>{{ res.projects[pid].title }} (#{{ fit.project(pid).rank }})</option>{% endfor %}
               </select></label></td>
-            <td class="num">{% if s.p is not none %}{% if s.p < 0.75 %}<span class="tag warn">{{ s.p | pct }}</span>{% else %}{{ s.p | pct }}{% endif %}{% else %}&mdash;{% endif %}</td>
+            <td class="num">{{ certainty(s.p) }}</td>
           </tr>{% endfor %}</tbody>
       </table></div>
     </fieldset>
     {% endif %}
-    <div class="checks"><label><input type="checkbox" name="confirm" value="1" required>I understand this is final and locks the event's results.</label></div>
-    <div><button class="primary" type="submit" {% if phase.voting == 'open' or not fit.identifiable %}disabled{% endif %}>Publish results</button></div>
+    {% set blocked = phase.voting in ('open', 'upcoming') or not fit.identifiable %}
+    <div class="checks"><label><input type="checkbox" name="confirm" value="1" required {% if blocked %}disabled{% endif %}>I understand this is final and locks the event's results.</label></div>
+    <div><button class="primary" type="submit" {% if blocked %}disabled{% endif %}>Publish results</button></div>
   </form>
 </div>
 {% endif %}
@@ -90,10 +97,13 @@
   {% if pw.direct %}
   <h3>Direct comparisons</h3>
   <div class="table-wrap"><table>
-    <thead><tr><th class="num">Rank</th><th>Project</th><th class="num">Strength</th><th class="num">&plusmn;</th><th class="num">Wins / compared</th></tr></thead>
-    <tbody>{% for s in pw.direct.strengths if s.comparisons > 0 %}<tr>
-      <td class="num">{{ s.rank }}</td><td><a href="/projects/{{ s.project }}">{{ pw.projects[s.project].title }}</a></td>
-      <td class="num">{{ '%+.2f' | format(s.strength) }}</td><td class="num">{{ s.sd | num(2) }}</td><td class="num">{{ s.wins | num(1) }} / {{ s.comparisons | num(0) }}</td>
+    <thead><tr><th class="num">Pairwise rank</th><th>Project</th><th class="num">Score rank</th><th class="num">Strength</th><th class="num">Wins / compared</th></tr></thead>
+    {% set score_rank = {} %}{% for p in fit.projects %}{% set _ = score_rank.update({p.project: p.rank}) %}{% endfor %}
+    <tbody>{% for s in pw.direct.strengths if s.comparisons > 0 %}{% set sr = score_rank.get(s.project) %}<tr>
+      <td class="num">{{ loop.index }}</td><td><a href="/projects/{{ s.project }}">{{ pw.projects[s.project].title }}</a></td>
+      <td class="num">{{ sr or '&mdash;' | safe }}{% if sr and (sr - loop.index) | abs >= 10 %} <span class="tag warn">disagrees</span>{% endif %}</td>
+      <td class="num">{{ '%+.2f' | format(s.strength) }} <span class="small muted">&plusmn;{{ s.sd | num(2) }}</span></td>
+      <td class="num">{{ s.wins | round | int if s.wins == s.wins | round else s.wins | num(1) }} / {{ s.comparisons | int }}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
   {% endif %}

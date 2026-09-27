@@ -9,19 +9,17 @@ The machine-readable spec is served at /api/openapi.json and described at
 from __future__ import annotations
 
 import json
-import secrets
 import sqlite3
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Security
+from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPBearer
-from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from .. import audit, domain, ratelimit, records, transfer
-from ..webhooks import check_destination
-from ..db import new_id, now, transaction
 from ..web import actor, base_url, conn_for, render, same_origin, signing_base_url
+from ..webhooks import check_destination
 
 router = APIRouter(dependencies=[Security(HTTPBearer(auto_error=False))])
 
@@ -38,7 +36,77 @@ def json_guard(request: Request, _token=Security(bearer)) -> None:
         raise domain.Forbidden("cross-origin request refused")
 
 
-v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(json_guard)], tags=["v1"])
+class ErrorOut(BaseModel):
+    error: str = Field(..., description="What went wrong, in plain words")
+
+
+ERRORS = {
+    401: {"model": ErrorOut, "description": "Not logged in: send a bearer token or a session cookie"},
+    403: {"model": ErrorOut, "description": "Logged in, but this role may not do that"},
+    404: {"model": ErrorOut, "description": "No such thing, or not visible to you"},
+    409: {"model": ErrorOut, "description": "Not now: a deadline, a lock, or a conflicting state"},
+    422: {"model": ErrorOut, "description": "Invalid input"},
+    429: {"model": ErrorOut, "description": "Too many attempts; wait and retry"},
+}
+
+
+class ProjectOut(BaseModel):
+    id: str
+    event_id: str
+    team_id: str
+    team_name: str
+    track_id: str | None
+    track_name: str | None
+    title: str
+    summary: str
+    description: str
+    repo_url: str
+    demo_url: str
+    status: str
+    submitted_at: str | None
+    updated_at: str
+    duplicate_of: str | None
+    disqualified_reason: str | None
+
+
+class GalleryOut(BaseModel):
+    total: int
+    projects: list[ProjectOut]
+
+
+class RankedOut(BaseModel):
+    rank: int
+    project_id: str
+    title: str
+    reviews: int
+    raw_mean: float
+    raw_rank: int
+    adjusted: float
+    interval90: list[float]
+    p_beats_next: float | None
+
+
+class ResultsOut(BaseModel):
+    method: dict
+    ranking: list[RankedOut]
+    judges: list[dict] | None
+    excluded_reviews: list[dict]
+    unreviewed_projects: list[str]
+
+
+class VerifyOut(BaseModel):
+    ok: bool
+    reason: str
+    body: dict | None = None
+
+
+class PublishOut(BaseModel):
+    results_record: str
+    judge_records: int
+    team_records: int
+
+
+v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(json_guard)], tags=["v1"], responses=ERRORS)
 
 
 def _row(r: sqlite3.Row | None) -> dict | None:
@@ -161,7 +229,7 @@ class EnvelopeIn(BaseModel):
 # --- the checker's judge-scores route ----------------------------------------------------
 
 
-@router.get("/api/judge/scores", tags=["judging"])
+@router.get("/api/judge/scores", tags=["judging"], responses=ERRORS)
 def judge_scores(request: Request, judge: str | None = None, event: str | None = None):
     """A judge's own reviews. Asking for another judge's (?judge=ID) needs
     organizer rights on that judge's events; a judge gets 403."""
@@ -271,7 +339,7 @@ def unsubmit(request: Request, project_id: str):
     return _project(domain.get_project(conn, project_id))
 
 
-@v1.get("/projects")
+@v1.get("/projects", response_model=GalleryOut)
 def gallery(request: Request, event: str | None = None, track: str | None = None, q: str | None = None,
             limit: int = 50, offset: int = 0):
     rows, total = domain.gallery(conn_for(request), event_id=event, track_id=track, q=q,
@@ -279,7 +347,7 @@ def gallery(request: Request, event: str | None = None, track: str | None = None
     return {"total": total, "projects": [_project(r) for r in rows]}
 
 
-@v1.get("/projects/{project_id}")
+@v1.get("/projects/{project_id}", response_model=ProjectOut)
 def get_project(request: Request, project_id: str):
     return _project(domain.view_project(conn_for(request), actor(request), project_id))
 
@@ -455,7 +523,14 @@ def rubric(request: Request, event_id: str, data: RubricIn):
 # --- results, integrity, records --------------------------------------------------------------------------
 
 
-@v1.get("/events/{event_id}/results")
+@v1.post("/events/{event_id}/rubric/lock", status_code=204)
+def lock_rubric(request: Request, event_id: str):
+    """Freeze the rubric for good (organizers). The signed results say whether and when it was locked."""
+    domain.lock_rubric(conn_for(request), actor(request), event_id)
+    return Response(status_code=204)
+
+
+@v1.get("/events/{event_id}/results", response_model=ResultsOut)
 def results(request: Request, event_id: str):
     res = domain.results_for_viewer(conn_for(request), actor(request), event_id)
     fit = res["fit"]
@@ -477,7 +552,7 @@ class PublishIn(BaseModel):
                                                             "winner, an empty string leaves a prize unawarded")
 
 
-@v1.post("/events/{event_id}/publish")
+@v1.post("/events/{event_id}/publish", response_model=PublishOut)
 def publish(request: Request, event_id: str, data: PublishIn | None = None):
     """Sign and freeze the results, award prizes, issue judge records and team certificates. Final."""
     return records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
@@ -503,7 +578,7 @@ def list_records(request: Request, event_id: str):
             for r in records.records_for(conn_for(request), event_id)]
 
 
-@v1.post("/verify")
+@v1.post("/verify", response_model=VerifyOut)
 def verify(request: Request, data: EnvelopeIn):
     return records.check_envelope(data.model_dump(), request.app.state.signer)
 

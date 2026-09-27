@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app tests tools
+      - run: python -m pytest -q
+
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+      - name: wait for the portal
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/projects > /dev/null && exit 0
+            sleep 1
+          done
+          docker compose logs
+          exit 1
+      - name: DOGFOOD acceptance checker
+        run: |
+          python3 tools/acceptance_run.py .dogfood.toml | tee acceptance-report.ci.txt
+          grep -q "verified T1 T2" acceptance-report.ci.txt
+      - if: always()
+        run: docker compose logs

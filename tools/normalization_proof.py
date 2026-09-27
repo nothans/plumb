@@ -19,6 +19,9 @@ Scenarios:
                criteria (with the floor and ceiling that implies), combined
                the way Plumb combines a rubric
   no-bias      judges are all fair; checks the correction costs nothing
+  fixture      calibrated to what the REML fit finds in the real fixture
+               reviews: judge lean sd 4.3, noise sd 15.9, and a small true
+               spread (sd 4). The regime Plumb actually faces on this data.
 
 Methods:
   raw          plain average of each project's scores
@@ -37,6 +40,11 @@ means and its 95% Monte Carlo interval, so a small gap can be told from luck):
 
     python tools/normalization_proof.py [--draws 1000] [--seed 7] [--out docs/normalization-proof.md]
 
+Also checks calibration: across all draws, every adjacent pair in Plumb's
+ranking gets a "beats next" probability; binned, the share of pairs whose
+true order matches should equal the stated probability. Those numbers are
+signed into results and certificates, so they must mean what they say.
+
 Writes a Markdown report; JUDGING.md quotes it, and tests/test_proof.py
 re-runs a small version to keep the headline ordering honest.
 """
@@ -53,10 +61,10 @@ sys.path.insert(0, str(ROOT))
 
 # Import the app package before numpy: it pins BLAS to one thread, which
 # only takes effect if it happens before numpy loads.
+import numpy as np  # noqa: E402
+
 from app import pairwise  # noqa: E402
 from app.normalize import Observation, combine, fit, raw_means, zscore_means  # noqa: E402
-
-import numpy as np  # noqa: E402
 
 
 def fixture() -> dict:
@@ -76,12 +84,15 @@ def spearman(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(ra, rb)[0, 1])
 
 
-SCENARIOS = ("additive", "scale", "flat", "track", "discrete", "no-bias")
+SCENARIOS = ("additive", "scale", "flat", "track", "discrete", "no-bias", "fixture")
+BINS = [(0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0001)]
 METHODS = ("raw", "zscore", "plumb", "pairwise")
 CRITERIA = [{"key": k, "weight": 1, "min_value": 1, "max_value": 5} for k in ("a", "b", "c")]
 
 
 def simulate(pairs, track_of, rng, scenario: str, q_sd=12.0, b_sd=8.0, e_sd=10.0):
+    if scenario == "fixture":
+        q_sd, b_sd, e_sd = 4.0, 4.3, 15.9
     projects = sorted({p for _, p in pairs})
     judges = sorted({j for j, _ in pairs})
     truth = dict(zip(projects, rng.normal(50, q_sd, len(projects))))
@@ -114,6 +125,7 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
     for scenario in scenarios:
         acc = {m: {"rmse": [], "spearman": [], "top5": []} for m in METHODS}
         coverage = []
+        calib = []  # (stated P(beats next), 1 if the true order agrees)
         for _ in range(draws):
             projects, truth, obs = simulate(pairs, track_of, rng, scenario)
             t = np.array([truth[p] for p in projects])
@@ -135,6 +147,9 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
                 top_true = set(np.array(projects)[np.argsort(-t)[:5]])
                 top_est = set(np.array(projects)[np.argsort(-v)[:5]])
                 acc[m]["top5"].append(len(top_true & top_est))
+            for upper, lower in zip(f.projects, f.projects[1:]):
+                if upper.p_above_next is not None:
+                    calib.append((upper.p_above_next, float(truth[upper.project] > truth[lower.project])))
             shift = np.mean([r.adjusted for r in f.projects]) - t.mean()
             coverage.append(np.mean([r.low - shift <= truth[r.project] <= r.high - shift for r in f.projects]))
         res = {}
@@ -145,6 +160,13 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
             res[m]["vs_raw"] = float(diff.mean())
             res[m]["vs_raw_ci"] = float(1.96 * diff.std(ddof=1) / np.sqrt(len(diff))) if len(diff) > 1 else 0.0
         res["plumb"]["coverage90"] = float(np.mean(coverage))
+        cal = np.array(calib)
+        res["calibration"] = []
+        for lo, hi in BINS:
+            sel = cal[(cal[:, 0] >= lo) & (cal[:, 0] < hi)] if len(cal) else cal
+            if len(sel):
+                res["calibration"].append({"bin": f"{lo:.0%}-{min(hi, 1):.0%}", "n": int(len(sel)),
+                                           "stated": float(sel[:, 0].mean()), "observed": float(sel[:, 1].mean())})
         out[scenario] = res
     return out
 
@@ -160,9 +182,16 @@ def report(res: dict, draws: int, seed: int) -> str:
     ]
     for scenario, methods in res.items():
         for m, r in methods.items():
+            if m == "calibration":
+                continue
             cov = f"{r['coverage90']:.0%}" if "coverage90" in r else ""
             vs = "" if m == "raw" else f"{r['vs_raw']:+.3f} (±{r['vs_raw_ci']:.3f})"
             lines.append(f"| {scenario} | {m} | {r['rmse']:.2f} | {r['spearman']:.3f} | {vs} | {r['top5']:.2f} | {cov} |")
+    lines += ["", "Calibration of \"beats next\": stated probability against how often the true order agreed.", "",
+              "| scenario | bin | pairs | stated | observed |", "|---|---|---:|---:|---:|"]
+    for scenario, methods in res.items():
+        for c in methods["calibration"]:
+            lines.append(f"| {scenario} | {c['bin']} | {c['n']} | {c['stated']:.3f} | {c['observed']:.3f} |")
     return "\n".join(lines) + "\n"
 
 

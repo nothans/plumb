@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import certainty %}
 {% block title %}Results · {{ event.name }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,13 +16,15 @@
 {% if res.body.awards %}
 <div class="panel">
   <h2 class="mt-0">Winners</h2>
-  <div class="table-wrap"><table>
-    <tbody>{% for a in res.body.awards %}<tr>
-      <td><strong>{{ a.name }}</strong></td>
-      <td><a href="/projects/{{ a.project }}">{{ a.title }}</a>{% if a.overrode_suggestion %} <span class="tag">organizers chose this over the top-ranked candidate</span>{% endif %}</td>
-      <td class="num small muted">{% if a.p_beats_rival is not none %}{{ a.p_beats_rival | pct }} sure it beats the closest rival{% endif %}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div>
+  <ul class="winners">{% for a in res.body.awards %}
+    <li>
+      <span class="prize">{{ a.name }}</span>
+      <span><a href="/projects/{{ a.project }}"><strong>{{ a.title }}</strong></a>
+        {{ certainty(a.p_beats_rival, res.projects[a.rival].title if a.rival and a.rival in res.projects else none) }}
+        {% if a.overrode_suggestion %}<span class="tag">organizers' choice over the top-ranked candidate</span>{% endif %}</span>
+    </li>{% endfor %}
+  </ul>
+  <p class="small muted">The tag says how sure the model is that the winner truly beats its closest rival. A <em>tie</em> means the reviews cannot tell them apart; the organizers decided.</p>
 </div>
 {% endif %}
 

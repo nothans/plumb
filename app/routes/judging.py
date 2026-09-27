@@ -105,9 +105,10 @@ async def save_review(request: Request, project_id: str):
 
 
 @router.get("/events/{event_id}/compare", response_class=HTMLResponse)
-def compare(request: Request, event_id: str):
+def compare(request: Request, event_id: str, skip: str = ""):
     conn = conn_for(request)
-    nxt = domain.pairwise_next(conn, actor(request), event_id)
+    skipped = {frozenset(s.split("~")) for s in skip.split(",") if s.count("~") == 1}
+    nxt = domain.pairwise_next(conn, actor(request), event_id, skip=skipped)
     return render(request, "compare.html", **nxt, phase=domain.phase(nxt["event"]))
 
 

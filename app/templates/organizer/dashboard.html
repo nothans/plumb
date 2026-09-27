@@ -26,21 +26,25 @@
   </div>
 </div>
 
-{% if not chain.ok or duplicates or flagged %}
+{% if not chain.ok or duplicates or flagged or signals.fresh_accounts %}
 <div class="panel">
   <h2 class="mt-0">Needs a decision</h2>
   {% if not chain.ok %}<div class="alert">The audit log fails verification at entry {{ chain.broken_at }}: someone changed the database outside Plumb. <a href="/events/{{ event.id }}/manage/integrity">Details</a></div>{% endif %}
+  {% if signals.fresh_accounts %}
+  <h3>Community vote</h3>
+  <p>{{ signals.fresh_accounts | length }} account{{ '' if signals.fresh_accounts | length == 1 else 's' }} created after voting opened {{ 'has' if signals.fresh_accounts | length == 1 else 'have' }} voted. <a href="/events/{{ event.id }}/manage/integrity">Review them</a></p>
+  {% endif %}
   {% if duplicates %}
   <h3>Possible duplicate submissions</h3>
-  <ul>{% for d in duplicates %}<li><a href="/projects/{{ d.first.id }}">{{ d.first.title }}</a> and <a href="/projects/{{ d.second.id }}">{{ d.second.title }}</a>: {{ d.reasons | join(", ") }}. <a href="/events/{{ event.id }}/manage/integrity">Decide which counts</a></li>{% endfor %}</ul>
+  <ul>{% for d in duplicates %}<li><a href="/projects/{{ d.first.id }}">{{ d.first.title }}</a> twice ({{ d.reasons | join(", ") }}).{% if d.resolved %} The later entry counts for now.{% endif %} <a href="/events/{{ event.id }}/manage/integrity">Confirm or swap</a></li>{% endfor %}</ul>
   {% endif %}
   {% if flagged %}
   <h3>Judges to look at</h3>
   <div class="table-wrap"><table>
-    <thead><tr><th>Judge</th><th class="num">Reviews</th><th class="num">Lean</th><th>Why</th></tr></thead>
+    <thead><tr><th>Judge</th><th class="num col-opt">Reviews</th><th class="num col-opt">Lean</th><th>Why</th></tr></thead>
     <tbody>{% for j in flagged %}<tr>
       <td><a href="/events/{{ event.id }}/manage/reviews?judge={{ j.judge }}">{{ names[j.judge] }}</a></td>
-      <td class="num">{{ j.n_reviews }}</td><td class="num">{{ '%+.1f' | format(j.leniency) }}</td>
+      <td class="num col-opt">{{ j.n_reviews }}</td><td class="num col-opt">{{ '%+.1f' | format(j.leniency) }}</td>
       <td>{% for f in j.flags %}{% if f == 'flat' %}<span class="tag warn">same score for every project</span>{% elif f == 'harsh' %}<span class="tag">harsher than peers</span>{% elif f == 'generous' %}<span class="tag">more generous than peers</span>{% endif %} {% endfor %}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
@@ -57,6 +61,7 @@
     <div class="stat"><div class="n">{{ prog.idle_judges | length }}</div><div class="l">judges with open queues</div></div>
     {% if event.voting_mode != 'off' %}<div class="stat"><div class="n">{{ turnout.voters }}</div><div class="l">community voters</div></div>{% endif %}
   </div>
+  <p class="small mt-m mb-0">{{ covered }} of {{ prog.projects | length }} projects at the target of {{ prog.target }} reviews</p>
   <progress max="{{ [prog.projects | length, 1] | max }}" value="{{ covered }}" aria-label="Projects at the review target"></progress>
 </div>
 

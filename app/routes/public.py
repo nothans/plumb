@@ -44,8 +44,11 @@ def event_page(request: Request, event_id: str):
     count = conn.execute(
         "SELECT COUNT(*) FROM projects WHERE event_id = ? AND status = 'submitted' AND duplicate_of IS NULL", (event_id,)
     ).fetchone()[0]
+    winners = {r["prize_id"]: r for r in conn.execute(
+        "SELECT a.prize_id, p.id, p.title FROM awards a JOIN projects p ON p.id = a.project_id WHERE a.event_id = ?",
+        (event_id,))}
     return render(
-        request, "event.html", event=event, phase=domain.phase(event), tracks=domain.tracks(conn, event_id),
+        request, "event.html", event=event, phase=domain.phase(event), tracks=domain.tracks(conn, event_id), winners=winners,
         prizes=domain.prizes(conn, event_id), roles=domain.roles(conn, event_id, me), my_team=my_team,
         my_project=my_project, project_count=count, criteria=domain.criteria(conn, event_id),
         turnout=domain.turnout(conn, event_id),
@@ -81,6 +84,7 @@ def project_page(request: Request, project_id: str):
         request, "project.html", project=project, event=event, phase=ph, members=members,
         comments=domain.comments(conn, me, project_id), is_member=bool(me and any(m["id"] == me.id for m in members)),
         is_organizer=domain.is_organizer(conn, event["id"], me), voted=voted, can_vote=can_vote,
+        is_judge="judge" in domain.roles(conn, event["id"], me),
     )
 
 
@@ -155,6 +159,16 @@ def event_records(request: Request, event_id: str):
     conn = conn_for(request)
     event = domain.get_event(conn, event_id)
     rows = [{"row": r, "body": json.loads(r["payload"])} for r in records.records_for(conn, event_id)]
+    order = {"results": 0, "team": 1, "judge": 2}
+
+    def key(r):
+        b = r["body"]
+        if r["row"]["kind"] == "team":
+            return (1, (b.get("placement") or {}).get("rank", 10**6), b["team"]["name"])
+        if r["row"]["kind"] == "judge":
+            return (2, 0, b["judge"]["name"])
+        return (order.get(r["row"]["kind"], 3), 0, "")
+    rows.sort(key=key)
     return render(request, "records.html", event=event, records=rows)
 
 
@@ -178,8 +192,15 @@ def record_page(request: Request, record_id: str):
 
 
 @router.get("/verify", response_class=HTMLResponse)
-def verify_form(request: Request):
-    return render(request, "verify.html", result=None, pasted="")
+def verify_form(request: Request, record: str = ""):
+    pasted = ""
+    if record:
+        try:
+            row = records.get_record(conn_for(request), record)
+            pasted = json.dumps(records.envelope(row, request.app.state.signer), indent=2)
+        except domain.NotFound:
+            pasted = ""
+    return render(request, "verify.html", result=None, pasted=pasted)
 
 
 @router.post("/verify", response_class=HTMLResponse)
@@ -190,7 +211,7 @@ async def verify_post(request: Request):
         env = json.loads(pasted)
         result = records.check_envelope(env if isinstance(env, dict) else {}, request.app.state.signer)
     except ValueError:
-        result = {"ok": False, "reason": "that is not JSON; paste the whole envelope from a record's JSON link"}
+        result = {"ok": False, "reason": "that is not JSON; paste the whole envelope from a record's \"Download envelope\" link"}
     return render(request, "verify.html", result=result, pasted=pasted)
 
 

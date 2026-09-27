@@ -13,7 +13,7 @@ browser / curl / agent
 │   routes/  public · account · teams · judging · organizer · api (JSON)       │
 │        │ every route is thin: parse, authenticate, call one domain function  │
 │        ▼                                                                      │
-│   domain.py  all rules and permission checks, one transaction per change,    │
+│   domain/    all rules and permission checks, one transaction per change,    │
 │              each writing its own audit entry                                │
 │   normalize.py, pairwise.py, assign.py (pure)   records.py + signing.py     │
 │   audit.py (hash chain)  transfer.py (import/export)  ratelimit.py          │
@@ -27,12 +27,12 @@ browser / curl / agent
 ## Layers
 
 **Routes are thin.**
-A route reads the request, resolves the actor (session cookie or bearer token), enforces CSRF, and calls exactly one function in `domain.py`.
+A route reads the request, resolves the actor (session cookie or bearer token), enforces CSRF, and calls exactly one function in the `domain` package.
 The HTML routes and the JSON API call the same domain functions, so a rule enforced once is enforced for every door.
 The DOGFOOD checker's "judge cannot read peer scores" check is one instance of this: the refusal lives in `domain.judge_scores`, and the page, the CSV and the API all inherit it.
 
 **The domain layer owns every rule.**
-`domain.py` is plain functions over a connection: `save_project`, `save_review`, `cast_vote`, `publish_results` and so on.
+`domain/` is plain functions over a connection (`save_project`, `save_review`, `cast_vote` and so on), split into layered modules that only import from the layers below them: `core` (errors, the actor, validation, users), `events`, `teams`, `projects`, `judging`, `results`, `voting`, `comments`, `pairwise_judging`, `hooks`, `exports`. The package re-exports every function, so callers write `domain.save_project`.
 Each mutating function takes the actor, checks permission first, checks the event phase second (so a closed deadline refuses a request before anything else is looked at), validates input, then writes inside one `BEGIN IMMEDIATE` transaction together with its audit entry.
 Errors are typed (`Unauthorized` 401, `Forbidden` 403, `NotFound` 404, `Conflict` 409 for "not now", `Invalid` 422), and one exception handler turns them into an HTML page or `{"error": ...}` JSON depending on who asked.
 A draft project that you may not see returns 404, not 403, so its existence does not leak.
@@ -93,5 +93,5 @@ All environment variables, all optional:
 
 ## Tests
 
-`python -m pytest -q` runs 52 tests: the model and Bradley-Terry on planted data, a seeded run of the normalization proof, the assigner, the seven DOGFOOD checks with the reasons behind each answer, the committed OpenAPI document, and end-to-end flows over HTTP for every role (deadline, isolation, invitation scope, voting, moderation, publication locks and verification, tamper detection, hostile input, spoofed forwarding headers, import/export round trip, webhooks).
+`python -m pytest -q` runs 74 tests (CI runs them on every push, with `ruff` and the official checker against a real `docker compose up`): the model and Bradley-Terry on planted data, a seeded run of the normalization proof, the assigner, the seven DOGFOOD checks with the reasons behind each answer, the committed OpenAPI document, and end-to-end flows over HTTP for every role (deadline, isolation, invitation scope, voting, moderation, publication locks and verification, tamper detection, hostile input, spoofed forwarding headers, import/export round trip, webhooks), plus one regression test per finding of the second review round (`tests/test_round2.py`), and checks that every figure the documents quote is what the code computes (`tests/test_docs.py`).
 `python tools/acceptance_run.py .dogfood.toml` is the official checker, byte-for-byte the published `run.py` (sha256 `aa98963841bc8e18e8e5d76f0499697c093dd3c0055f9d73a459f592f4dcf09d`).

@@ -100,18 +100,14 @@ class Fit:
     # left over to estimate noise from, and no interval can be honest.
     identifiable: bool = True
     _index: dict = field(default_factory=dict, repr=False)
-    _cov: object = field(default=None, repr=False)
+    _cov: object = field(default=None, repr=False)       # posterior covariance of true quality
+    _mean: object = field(default=None, repr=False)      # posterior mean of true quality
 
     def p_better(self, a: str, b: str) -> float | None:
-        """Probability that a's true quality exceeds b's, from the joint covariance."""
+        """Probability that a's true quality exceeds b's (see _posterior)."""
         if not self.identifiable or self._cov is None:
             return None
-        i, j = self._index[a], self._index[b]
-        var = self._cov[i, i] + self._cov[j, j] - 2 * self._cov[i, j]
-        diff = self.project(a).adjusted - self.project(b).adjusted
-        if var <= VAR_FLOOR:
-            return 0.5 if abs(diff) < 1e-9 else float(diff > 0)
-        return _phi(diff / math.sqrt(var))
+        return _p_better(self._mean, self._cov, self._index[a], self._index[b])
 
     @property
     def judge_sd(self) -> float:
@@ -163,6 +159,39 @@ def combine(values: dict[str, float], criteria: list[dict]) -> float | None:
 
 def _phi(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _p_better(mean, cov, i: int, j: int) -> float:
+    var = cov[i, i] + cov[j, j] - 2 * cov[i, j]
+    diff = mean[i] - mean[j]
+    if var <= VAR_FLOOR:
+        return 0.5 if abs(diff) < 1e-9 else float(diff > 0)
+    return _phi(diff / math.sqrt(var))
+
+
+def _posterior(q_hat: np.ndarray, cov: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+    """Empirical-Bayes posterior of true project quality, for probabilities only.
+
+    The adjusted scores are fixed-effect estimates, deliberately not shrunk,
+    so a team is not marked down for how many judges saw it. But the chance
+    that one project truly beats another must account for how alike projects
+    are: when true differences are small next to the noise, a gap between two
+    estimates is mostly noise, and a flat-prior probability overstates it
+    (the calibration check in tools/normalization_proof.py measured stated
+    84% against 60% observed on fixture-like data). So probabilities use a
+    Normal(m, spread^2) prior on quality, with the spread estimated from the
+    data itself (the variance of the estimates minus their average
+    estimation variance), which is standard empirical Bayes.
+    """
+    n = len(q_hat)
+    if n < 2:
+        return q_hat.copy(), cov.copy(), 0.0
+    spread2 = max(float(np.var(q_hat, ddof=1)) - float(np.mean(np.diag(cov))), 1e-6 * float(np.mean(np.diag(cov))))
+    prec = np.linalg.inv(cov)
+    post_cov = np.linalg.inv(prec + np.eye(n) / spread2)
+    m = float(np.mean(q_hat))
+    post_mean = post_cov @ (prec @ q_hat + m / spread2)
+    return post_mean, post_cov, spread2
 
 
 def _components(obs: list[Observation]) -> int:
@@ -288,17 +317,13 @@ def fit(observations: list[Observation]) -> Fit:
         r.rank = rank
     for rank, r in enumerate(sorted(presults, key=lambda r: (-r.raw_mean, r.project)), start=1):
         r.raw_rank = rank
+    post_mean = post_cov = None
+    if identifiable:
+        q_hat = np.array([float(m[d.pi[p]]) for p in d.projects])
+        post_mean, post_cov, _ = _posterior(q_hat, C[: d.P, : d.P])
     for upper, lower in zip(presults, presults[1:]):
-        if not identifiable:
-            upper.p_above_next = None
-            continue
-        a, c = d.pi[upper.project], d.pi[lower.project]
-        diff_var = C[a, a] + C[c, c] - 2 * C[a, c]
-        diff = upper.adjusted - lower.adjusted
-        if diff_var > VAR_FLOOR:
-            upper.p_above_next = _phi(diff / math.sqrt(diff_var))
-        else:
-            upper.p_above_next = 0.5 if abs(diff) < 1e-9 else 1.0
+        upper.p_above_next = (_p_better(post_mean, post_cov, d.pi[upper.project], d.pi[lower.project])
+                              if identifiable else None)
 
     jresults = []
     for j in d.judges:
@@ -335,7 +360,8 @@ def fit(observations: list[Observation]) -> Fit:
         judges=jresults,
         identifiable=identifiable,
         _index=dict(d.pi),
-        _cov=C[: d.P, : d.P] if identifiable else None,
+        _cov=post_cov,
+        _mean=post_mean,
     )
 
 

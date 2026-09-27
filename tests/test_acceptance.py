@@ -2,7 +2,6 @@
 reasons behind each answer (a check can pass for the wrong reason)."""
 
 import tomllib
-from pathlib import Path
 
 from .conftest import ROOT
 

@@ -1,24 +1,26 @@
-{% from "_macros.html" import interval, interval_legend %}
+{% from "_macros.html" import interval, interval_legend, certainty %}
 {# Shared by the public results page and the organizer's live view. #}
 {{ interval_legend() }}
 <div class="table-wrap">
 <table>
   <thead><tr>
     <th class="num">Rank</th><th>Project</th><th class="col-opt">Track</th><th class="num col-opt">Reviews</th>
-    <th class="num col-opt">Raw</th><th class="num">Adjusted</th><th class="iv">Interval</th><th class="num">Beats next</th>
+    <th class="num col-opt">Raw</th><th class="num">Adjusted</th>
+    <th class="iv col-opt"><span class="axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></span></th>
+    <th class="num">Beats next</th>
   </tr></thead>
   <tbody>
   {% for p in fit.projects %}{% set proj = res.projects[p.project] %}
     <tr>
       <td class="num">{{ p.rank }}{% if p.raw_rank != p.rank %}<br><span class="small muted">raw {{ p.raw_rank }}</span>{% endif %}</td>
       {% set lean = p.raw_mean - p.adjusted %}
-      <td><a href="/projects/{{ p.project }}">{{ proj.title }}</a><br><span class="small muted">{{ proj.team_name }}{% if lean >= 1 %} · its judges ran {{ lean | num }} generous{% elif lean <= -1 %} · its judges ran {{ (-lean) | num }} harsh{% endif %}</span></td>
+      <td><a href="/projects/{{ p.project }}">{{ proj.title }}</a><br><span class="small muted">{{ proj.team_name }}{% if lean >= 0.5 %} · its judges scored {{ lean | num }} points high{% elif lean <= -0.5 %} · its judges scored {{ (-lean) | num }} points low{% endif %}</span></td>
       <td class="col-opt">{{ tracks.get(proj.track_id, '') }}</td>
       <td class="num col-opt">{{ p.n_reviews }}</td>
       <td class="num col-opt">{{ p.raw_mean | num }}</td>
       <td class="num"><strong>{{ p.adjusted | num }}</strong><br><span class="small muted">&plusmn;{{ (p.high - p.adjusted) | num }}</span></td>
-      <td class="iv">{{ interval(p) }}</td>
-      <td class="num">{% if p.p_above_next is not none %}{% if p.p_above_next >= 0.9 %}<span class="tag ok">{{ p.p_above_next | pct }}</span>{% else %}{{ p.p_above_next | pct }}{% endif %}{% endif %}</td>
+      <td class="iv col-opt">{{ interval(p) }}</td>
+      <td class="num">{% if not loop.last %}{{ certainty(p.p_above_next) }}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

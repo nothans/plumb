@@ -1,7 +1,7 @@
 import io
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,7 +19,7 @@ SESSIONS = {role: token for role, (token, _) in cli.DEMO_SESSIONS.items()}
 
 
 def ts(delta_hours: float) -> str:
-    return (datetime.now(timezone.utc) + timedelta(hours=delta_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (datetime.now(UTC) + timedelta(hours=delta_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @pytest.fixture

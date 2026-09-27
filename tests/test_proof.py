@@ -21,3 +21,11 @@ def test_headline_ordering_holds():
     # The intervals mean what they say.
     for scenario in res:
         assert 0.86 <= res[scenario]["plumb"]["coverage90"] <= 0.94, scenario
+
+
+def test_beats_next_probabilities_are_calibrated():
+    res = proof.evaluate(draws=80, seed=5, scenarios=("additive", "fixture"))
+    for scenario, r in res.items():
+        for b in r["calibration"]:
+            if b["n"] >= 300:  # enough pairs for the bin to mean something
+                assert abs(b["stated"] - b["observed"]) < 0.06, (scenario, b)

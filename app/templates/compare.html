@@ -33,6 +33,9 @@
   </section>
   {% endfor %}
 </div>
+<div class="actions">
+  <a class="btn" href="/events/{{ event.id }}/compare?skip={{ (request.query_params.get('skip', '') ~ ',' if request.query_params.get('skip') else '') }}{{ pair[0].id }}~{{ pair[1].id }}">Too close to call: skip this pair</a>
+</div>
 <p class="small muted">Comparisons are yours alone, like your scores. They feed a Bradley-Terry ranking the organizers see next to the score-based one.</p>
 {% else %}
 <div class="empty"><p>{% if possible == 0 %}You need at least two assigned projects to compare.{% else %}You have compared every pair of your assigned projects. Thank you.{% endif %}</p>

@@ -4,21 +4,20 @@
 <div class="page-head"><div>
   <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
   <h1>Signed records</h1>
-  <p>Statements this portal signed when results were published. Each can be checked against the <a href="/.well-known/plumb-key.json">public key</a>, here or offline.</p>
+  <p>Statements this portal signed when results were published{% if records %}, {{ records[0].row.issued_at | ts }}{% endif %}. Each can be checked against the <a href="/.well-known/plumb-key.json">public key</a>, here or offline.</p>
 </div></div>
 <div class="panel">
 {% if records %}
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Record</th><th>Kind</th><th>About</th><th>Issued</th></tr></thead>
+  <thead><tr><th>Record</th><th>Kind</th><th>About</th></tr></thead>
   <tbody>{% for r in records %}
     <tr>
       <td><a class="mono" href="/records/{{ r.row.id }}">{{ r.row.id }}</a></td>
       <td><span class="tag">{{ r.row.kind }}</span></td>
-      <td>{% if r.row.kind == 'judge' %}{{ r.body.judge.name }}, {{ r.body.reviews }} reviews
-          {% elif r.row.kind == 'team' %}{{ r.body.team.name }}: {{ r.body.project.title }}{% if r.body.placement %}, rank {{ r.body.placement.rank }} of {{ r.body.placement.of }}{% endif %}
-          {% else %}The ranking of {{ r.body.ranking | length }} projects{% endif %}</td>
-      <td class="nowrap">{{ r.row.issued_at | ts }}</td>
+      <td>{% if r.row.kind == 'judge' %}{{ r.body.judge.name }}, {{ r.body.reviews }} review{{ '' if r.body.reviews == 1 else 's' }}
+          {% elif r.row.kind == 'team' %}{{ r.body.team.name }}: {{ r.body.project.title }}{% if r.body.placement %}, rank {{ r.body.placement.rank }} of {{ r.body.placement.of }}{% endif %}{% for a in r.body.awards or [] %} <span class="tag ok">{{ a }}</span>{% endfor %}
+          {% else %}<strong>The results</strong>: ranking of {{ r.body.ranking | length }} projects and the awards{% endif %}</td>
     </tr>{% endfor %}
   </tbody>
 </table>

@@ -140,6 +140,7 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             },
             "rubric": [{"key": c["key"], "weight": c["weight"], "min": c["min_value"], "max": c["max_value"]}
                        for c in res["criteria"]],
+            "rubric_history": domain.rubric_history(conn, event_id),
             "awards": chosen,
             "ranking": ranking,
             "excluded_reviews": len(res["excluded"]),

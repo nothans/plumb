@@ -11,7 +11,7 @@
   {% else %}
     <div class="alert">The chain breaks at entry {{ chain.broken_at }}: that row, or one before it, was changed or deleted outside Plumb. Entries after it cannot be trusted until this is explained.</div>
   {% endif %}
-  <p class="small muted">The database refuses updates and deletes on the log. Published results carry the head hash in a signed record, so history before publication cannot be rewritten without the signature failing to match.</p>
+  <p class="small muted">The database refuses updates and deletes on the log, and published results carry the head hash in a signed record. Someone who controls both the server and its signing key could still rewrite history and sign again; copying the head hash somewhere outside the portal at key moments closes that gap (see THREAT-MODEL.md).</p>
 </div>
 
 <div class="panel">
@@ -63,9 +63,9 @@
   {% else %}<p class="muted">None.</p>{% endif %}
   <h3>Accounts created after voting opened</h3>
   {% if signals.fresh_accounts %}
-  <table><thead><tr><th>Account</th><th>Created</th><th class="num">Votes</th><th></th></tr></thead>
-  <tbody>{% for r in signals.fresh_accounts %}<tr><td>{{ r.email }}</td><td>{{ r.created_at | ts }}</td><td class="num">{{ r.votes }}</td>
-    <td><form class="row tight" method="post" action="/events/{{ event.id }}/manage/void-votes">{{ csrf_field() }}<input type="hidden" name="voter_id" value="{{ r.id }}"><input type="text" name="reason" placeholder="reason" required aria-label="Reason"><button class="danger" type="submit">Void votes</button></form></td></tr>{% endfor %}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Account</th><th class="col-opt">Created</th><th class="num">Votes</th><th></th></tr></thead>
+  <tbody>{% for r in signals.fresh_accounts %}<tr><td>{{ r.email }}</td><td class="col-opt nowrap">{{ r.created_at | ts }}</td><td class="num">{{ r.votes }}</td>
+    <td><form class="row tight" method="post" action="/events/{{ event.id }}/manage/void-votes">{{ csrf_field() }}<input type="hidden" name="voter_id" value="{{ r.id }}"><input type="text" name="reason" placeholder="reason" required aria-label="Reason" {% if frozen %}disabled{% endif %}><button class="danger nowrap" type="submit" {% if frozen %}disabled{% endif %}>Void votes</button></form></td></tr>{% endfor %}</tbody></table></div>
   {% else %}<p class="muted">None.</p>{% endif %}
   <h3>Projects drawing votes from new accounts</h3>
   {% if signals.concentrated %}

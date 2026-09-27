@@ -6,7 +6,9 @@
 <div class="panel">
   <h2>Weights</h2>
   <p>Weights are relative: 2 counts twice as much as 1. They are applied when scores are combined, so you can change them at any time before results are published and the live ranking follows. Every change is in the audit log.</p>
-  {% if event.results_published_at %}<div class="alert warn">Results are published; the rubric is locked.</div>{% endif %}
+  {% if event.results_published_at %}<div class="alert warn">Results are published; the rubric is locked.</div>
+  {% elif event.rubric_locked_at %}<div class="notice">Locked {{ event.rubric_locked_at | ts }}. The weights can no longer change, and the signed results will say so.</div>
+  {% elif history.changes_after_first_review %}<div class="alert warn">The weights have changed {{ history.changes_after_first_review }} time{{ '' if history.changes_after_first_review == 1 else 's' }} since reviews started. The signed results will record that.</div>{% endif %}
   <form class="stack" method="post" action="/events/{{ event.id }}/manage/rubric">{{ csrf_field() }}
     <table>
       <thead><tr><th>Criterion</th><th>Scale</th><th class="num">Weight</th><th class="num">Share</th></tr></thead>
@@ -14,8 +16,8 @@
         <tr>
           <td><strong>{{ c.name }}</strong>{% if c.description %}<br><span class="small muted">{{ c.description }}</span>{% endif %}</td>
           <td>{{ c.min_value }} to {{ c.max_value }}</td>
-          <td class="num"><input class="num-input" type="number" name="weight_{{ c.id }}" value="{{ c.weight | round(2) }}" min="0" max="100" step="0.1" aria-label="Weight for {{ c.name }}" {% if event.results_published_at %}disabled{% endif %}></td>
-          <td class="num">{% if total %}{{ (100 * c.weight / total) | round | int }}%{% endif %}</td>
+          <td class="num"><input class="num-input" type="number" name="weight_{{ c.id }}" value="{{ c.weight | round(2) }}" min="0" max="100" step="0.1" aria-label="Weight for {{ c.name }}" {% if event.results_published_at or event.rubric_locked_at %}disabled{% endif %}></td>
+          <td class="num">{% if total %}{{ (100 * c.weight / total) | round(1) }}%{% endif %}</td>
         </tr>{% endfor %}
       </tbody>
     </table>
@@ -30,7 +32,13 @@
       <p class="small muted mt-s">Criteria can only be added before the first review, so every review scores the same things.</p>
     </fieldset>
     {% endif %}
-    {% if not event.results_published_at %}<div><button class="primary" type="submit">Save rubric</button></div>{% endif %}
+    {% if not event.results_published_at and not event.rubric_locked_at %}<div><button class="primary" type="submit">Save rubric</button></div>{% endif %}
   </form>
+  {% if not event.results_published_at and not event.rubric_locked_at %}
+  <form class="mt-m" method="post" action="/events/{{ event.id }}/manage/rubric/lock">{{ csrf_field() }}
+    <p class="small muted">Lock the rubric when judging opens, so nobody (you included) can reweight it after seeing the live ranking. This cannot be undone.</p>
+    <button type="submit">Lock the rubric</button>
+  </form>
+  {% endif %}
 </div>
 {% endblock %}

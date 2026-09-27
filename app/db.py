@@ -3,11 +3,11 @@
 import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Numbered migrations for databases created by an older version. schema.sql
 # always describes the current shape (and is idempotent), so a new database
@@ -15,21 +15,22 @@ SCHEMA_VERSION = 3
 MIGRATIONS: dict[int, list[str]] = {
     2: ["ALTER TABLE events ADD COLUMN pairwise INTEGER NOT NULL DEFAULT 0 CHECK (pairwise IN (0, 1))"],
     3: ["ALTER TABLE votes ADD COLUMN nonce TEXT"],
+    4: ["ALTER TABLE events ADD COLUMN rubric_locked_at TEXT"],
 }
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_ts(value: str | None) -> datetime | None:
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
 def to_ts(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def new_id(prefix: str) -> str:

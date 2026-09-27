@@ -22,7 +22,7 @@
     <tr>
       <td><a href="/projects/{{ r.id }}">{{ r.title }}</a><br><span class="muted small">{{ r.team_name }}</span></td>
       <td>{{ r.track_name or '' }}</td>
-      <td>{% if r.review_id %}<span class="tag ok">Reviewed {{ r.reviewed_at | ts }}</span>{% else %}<span class="tag warn">To do</span>{% endif %}</td>
+      <td>{% if r.review_id and r.source == 'import' %}<span class="tag ok">Reviewed (imported)</span>{% elif r.review_id %}<span class="tag ok">Reviewed {{ r.reviewed_at | ts }}</span>{% else %}<span class="tag warn">To do</span>{% endif %}</td>
       <td>{% if phase.judging_open %}<a class="btn {{ '' if r.review_id else 'primary' }}" href="/projects/{{ r.id }}/review">{{ 'Edit' if r.review_id else 'Review' }}</a>{% endif %}</td>
     </tr>{% endfor %}
   </tbody>

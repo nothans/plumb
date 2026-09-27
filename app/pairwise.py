@@ -102,7 +102,7 @@ def fit(comparisons: list[Comparison], projects: list[str] | None = None, *, max
     li = np.array([idx[c.loser] for c in comparisons], dtype=int)
     it = 0
     H = np.eye(n) * prec
-    for it in range(1, max_iter + 1):
+    for it in range(1, max_iter + 1):  # noqa: B007  (it is the iteration count, read after the loop)
         d = s[wi] - s[li]
         p = 1.0 / (1.0 + np.exp(-d))           # P(winner beats loser) under current s
         g = -prec * s

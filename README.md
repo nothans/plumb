@@ -39,7 +39,7 @@ Without Docker: `pip install -r requirements.txt`, then `PLUMB_DEMO=1 python -m 
 
 ## A five-minute tour
 
-1. **The end first.** Open [Sample Hack 2026 (published replay)](http://localhost:8080/events/evt_replay/results): winners, how sure the model is about each, the ranking with 90% intervals, and why each project moved ("its judges ran 3.1 harsh"). Open a certificate from *All records*, download its envelope, and check it at [/verify](http://localhost:8080/verify), or offline with `tools/verify_record.py`. Change one character and it fails.
+1. **The end first.** Open [Sample Hack 2026 (published replay)](http://localhost:8080/events/evt_replay/results): winners, how sure the model is about each, the ranking with 90% intervals, and why each project moved ("its judges scored 1.2 points high"). On this data the honest answer is that every prize is a statistical tie, and the page says so next to each winner. Open a certificate from *All records*, download its envelope, and check it at [/verify](http://localhost:8080/verify), or offline with `tools/verify_record.py`. Change one character and it fails.
 2. **As the organizer** (organizer@example.org), open *Sample Hack 2026*, then *Manage*:
    * *Progress* says what needs you now: 8 projects below three reviews (one button fixes it) and the judge who gave every project the same score.
    * *Results* shows the live ranking, track leaders with how sure each lead is, and a Bradley-Terry cross-check. On the fixture data the honest answer is that neighbouring ranks are close to coin flips, and the page says so. *Publish* is a deliberate second step, and it is refused while the community vote is open.
@@ -61,14 +61,14 @@ Login and signup, roles (visitor, participant, judge, organizer, admin), events 
 Judge invitation links; track-aware, conflict-aware, coverage-first assignment; an organizer-weighted rubric; backend role isolation; a live progress dashboard; documented cross-judge normalization with a proof ([JUDGING.md](JUDGING.md)); CSV export.
 
 **T3 public** (claimed; tested in the suite).
-Community voting (organizers choose: any account, or participants only); comments with moderation; vote counts hidden from everyone, organizers included, until voting closes, and judged results unpublishable while voting is open; a ballot shuffled per voter; and an answer to cheating: one vote per project, a fixed number per voter, no voting for your own team, rate limits, abuse signals (shared addresses, accounts created mid-vote, projects drawing their votes), void-with-reason, and the audit trail ([THREAT-MODEL.md](THREAT-MODEL.md)).
+Community voting (organizers choose: any account, or participants only); comments with moderation; results hidden during voting in a way that holds against organizers too: counts are hidden from everyone, votes enter the audit log only as seals until the vote closes (then the nonces are revealed so anyone can check the tally), an open vote cannot be shortened, and judged results cannot be published until it closes; a ballot shuffled per voter; and an answer to cheating: one vote per project, a fixed number per voter, no voting for your own team, rate limits, abuse signals (shared addresses, accounts created mid-vote, projects drawing their votes), void-with-reason, and the audit trail ([THREAT-MODEL.md](THREAT-MODEL.md)).
 
 **T4 stretch** (built; see it in the replay event).
 A JSON API for every UI action with an OpenAPI document ([`/api`](http://localhost:8080/api), [`docs/openapi.json`](docs/openapi.json)); webhooks that stream the audit log with HMAC signatures, managed from the *Integrations* tab; certificates; signed, publicly verifiable judge participation records; an embeddable gallery widget with a copyable snippet; bulk import and export in the fixture format.
 
 **Bonus challenges.**
 Normalization proof ([JUDGING.md section 5](JUDGING.md#5-the-normalization-proof), [`docs/normalization-proof.md`](docs/normalization-proof.md), `tools/normalization_proof.py`, checked by `tests/test_proof.py`).
-Pairwise mode (Bradley-Terry with active pair selection, [JUDGING.md section 8](JUDGING.md#8-pairwise-mode-bradley-terry)).
+Pairwise mode (Bradley-Terry with active pair selection and a skip for pairs too close to call, [JUDGING.md section 8](JUDGING.md#8-pairwise-mode-bradley-terry)).
 Threat model ([THREAT-MODEL.md](THREAT-MODEL.md)).
 API first ([`docs/openapi.json`](docs/openapi.json), kept current by `tests/test_openapi.py`).
 
@@ -93,16 +93,18 @@ python tools/verify_record.py envelope.json --key "$(curl -s localhost:8080/.wel
 Demo mode publishes fixed logins (they are in `.dogfood.toml`), and every page says so in a banner.
 For a real event:
 
-1. Set `PLUMB_DEMO: "0"` in `docker-compose.yml`, and add `PLUMB_ADMIN_EMAIL` and `PLUMB_ADMIN_PASSWORD` for the first admin (or run `docker compose exec plumb python -m app.cli create-admin you@example.org "Your Name"`).
-2. Put it behind a TLS reverse proxy (Caddy, nginx, Traefik). Set `PLUMB_SECURE_COOKIES: "1"`, `PLUMB_BASE_URL` to the public address, and `FORWARDED_ALLOW_IPS` to the proxy's address (never `*`: that lets any client choose its own address and walk around the rate limits).
+1. Start from an empty volume (`docker compose down -v`): Plumb refuses to boot a demo-seeded database with demo mode off, because its logins are public. Then set `PLUMB_DEMO: "0"` in `docker-compose.yml`, and add `PLUMB_ADMIN_EMAIL` and `PLUMB_ADMIN_PASSWORD` for the first admin (or run `docker compose exec plumb python -m app.cli create-admin you@example.org "Your Name"`).
+2. Put it behind a TLS reverse proxy (Caddy, nginx, Traefik). Set `PLUMB_SECURE_COOKIES: "1"`, `PLUMB_BASE_URL` to the public address (it is signed into every record, and publishing is refused without it), and `FORWARDED_ALLOW_IPS` to the proxy's address (never `*`: that lets any client choose its own address and walk around the rate limits).
 3. Back up `/data` on a schedule: `docker compose exec plumb python -m app.cli backup /data/backup.db`, plus `/data/signing-key.pem`. Records stay verifiable only with the same key; pin its public key (`/.well-known/plumb-key.json`) somewhere outside the portal.
 4. Upgrade by backing up, pulling the new version and starting it; database migrations run on boot.
 5. Import last year's event, or any fixture-shaped file, from *Import an event* on the home page.
+6. When judging opens, lock the rubric (*Manage*, *Rubric*), so nobody can reweight after seeing the live ranking.
 
 ## Honest limitations
 
 * Plumb sends no email. Invitations are links the organizer copies and sends, and there is no self-service password reset: an operator resets one with `docker compose exec plumb python -m app.cli set-password <email>`.
 * "Anyone with an account" voting cannot stop determined sock puppets, because accounts are not tied to verified addresses. Use "participants only" for votes with prizes, and review the signals on the Integrity page.
+* The fixture data's project summaries are the contest's placeholder text ("One line of what it does."); Plumb shows the data as given.
 * The normalization model is additive; it does not model judges who stretch or squash their scale (JUDGING.md explains why, and the proof shows it still ranks best when they do).
 * One instance per database file. SQLite is plenty for a hackathon, not for a multi-tenant service.
 * Rate limits are in memory and reset on restart.
@@ -118,7 +120,8 @@ For a real event:
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest -q                                    # 52 tests
+python -m pytest -q                                    # 74 tests
+ruff check app tests tools                             # lint
 python tools/acceptance_run.py .dogfood.toml           # the DOGFOOD checker, against a running portal
 python tools/normalization_proof.py --draws 1000       # the proof, about 30 seconds
 ```

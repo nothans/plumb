@@ -33,8 +33,8 @@ import ssl
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .db import connect, now
 
@@ -173,7 +173,7 @@ class Deliverer:
                     headers = {"Content-Type": "application/json", "User-Agent": "Plumb-Webhook/1",
                                "X-Plumb-Event": row["action"], "X-Plumb-Signature": sign(hook["secret"], body)}
                     status, error, hanging = _with_deadline(
-                        lambda: self.send(hook["url"], body, headers), self.deadline)
+                        lambda url=hook["url"], b=body, h=headers: self.send(url, b, h), self.deadline)
                     if hanging is not None:
                         self.stuck[hid] = hanging
                     ok = error is None and status is not None and 200 <= status < 300

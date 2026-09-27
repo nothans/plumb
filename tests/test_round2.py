@@ -10,7 +10,7 @@ import pytest
 from app import cli, webhooks
 from app.config import Settings
 
-from .conftest import ROOT, post_form, ts
+from .conftest import post_form, ts
 
 FIX, LIVE, REPLAY = "evt_01", "evt_demo_live", "evt_replay"
 
@@ -114,6 +114,16 @@ def test_explicit_double_award_is_refused(organizer, db):
     assert _published_fixture(organizer, db, {"prz_a": pid, "prz_b": pid}).status_code == 422
 
 
+def test_locked_rubric_cannot_change_and_the_record_says_so(organizer, db):
+    assert organizer.put(f"/api/v1/events/{FIX}/rubric", json={"weights": {"quality": 2}}).status_code == 200
+    assert organizer.post(f"/api/v1/events/{FIX}/rubric/lock").status_code == 204
+    assert organizer.put(f"/api/v1/events/{FIX}/rubric", json={"weights": {"quality": 3}}).status_code == 409
+    set_event(db, FIX, voting_open=ts(-48), voting_close=ts(-1))
+    assert organizer.post(f"/api/v1/events/{FIX}/publish").status_code == 200
+    body = json.loads(db.execute("SELECT payload FROM records WHERE event_id = ? AND kind = 'results'", (FIX,)).fetchone()[0])
+    assert body["rubric_history"]["locked_at"] and body["rubric_history"]["changes_after_first_review"] == 1
+
+
 # --- demo credentials never reach production ---------------------------------------------------------
 
 
@@ -136,8 +146,7 @@ def test_list_valued_timestamps_and_bidi_names_are_refused(organizer, app):
 
 
 def test_host_header_never_reaches_a_signed_record(app, organizer, db):
-    app.state.settings.__dict__  # frozen dataclass; build a copy without a base URL
-    from dataclasses import replace
+    from dataclasses import replace  # settings are frozen; build a copy without a base URL
     app.state.settings = replace(app.state.settings, base_url="")
     set_event(db, FIX, voting_open=ts(-48), voting_close=ts(-1))
     r = organizer.post(f"/api/v1/events/{FIX}/publish", headers={"Host": "attacker.example"})

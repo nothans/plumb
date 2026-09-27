@@ -261,9 +261,16 @@ pre.json { background: var(--ground); border: 1px solid var(--line-2); border-ra
 .cert dt { color: var(--ink-3); }
 .cert dd { margin: 0; font-weight: 600; }
 @media print {
-  .top, footer, .no-print { display: none !important; }
-  body { background: #fff; }
-  .cert { box-shadow: none; border: 0; }
+  /* Paper is light whatever the screen theme. */
+  :root {
+    --ground: #fbfcfd; --surface: #fbfcfd; --ink: #16202a; --ink-2: #3f4b58; --ink-3: #5b6875;
+    --line: #d5dce3; --line-2: #e4e9ee; --accent: #0b6663; --accent-soft: #e2f1f0; --ok: #1d6b43; --ok-soft: #e3f2e9;
+    color-scheme: light;
+  }
+  .top, footer, .no-print, .demo-banner { display: none !important; }
+  body { background: var(--surface); }
+  main { padding: 0; }
+  .cert { box-shadow: none; background: transparent; }
 }
 
 /* --- embed --- */
@@ -308,3 +315,25 @@ aside.panel, .split > aside { align-self: start; }
 .row.tight { flex-wrap: nowrap; align-items: center; }
 .row.tight input { min-width: 140px; }
 .demo-banner { background: var(--warn-soft); color: var(--warn); text-align: center; font-size: 0.85rem; padding: 6px 16px; border-bottom: 1px solid color-mix(in srgb, var(--warn) 25%, transparent); }
+
+/* --- round two --- */
+.winners { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.winners li { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 4px 16px; align-items: baseline; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); }
+.winners li:last-child { border-bottom: 0; }
+.winners .prize { color: var(--ink-2); font-weight: 600; }
+.axis { display: flex; justify-content: space-between; width: 200px; font-weight: 400; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+p code, li code, td code { overflow-wrap: anywhere; }
+code.nowrap { white-space: nowrap; }
+a.tag { text-decoration: none; }
+a.tag:hover { text-decoration: underline; }
+.tag { min-height: 22px; line-height: 20px; }
+::placeholder { color: var(--ink-3); opacity: 1; }
+.only-mobile { display: none; }
+@media (max-width: 640px) {
+  .subnav { overflow-y: hidden; }
+  .who { grid-row: 1; grid-column: 2; }
+  .nav { grid-row: 2; }
+  .winners li { grid-template-columns: 1fr; }
+  .only-mobile { display: block; margin-top: 6px; }
+}

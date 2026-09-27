@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS events (
     reviews_per_project  INTEGER NOT NULL DEFAULT 3 CHECK (reviews_per_project BETWEEN 1 AND 20),
     max_team_size        INTEGER NOT NULL DEFAULT 4 CHECK (max_team_size BETWEEN 1 AND 50),
     pairwise             INTEGER NOT NULL DEFAULT 0 CHECK (pairwise IN (0, 1)),
+    rubric_locked_at     TEXT,
     results_published_at TEXT,
     created_at           TEXT NOT NULL,
     CHECK (submissions_open < submissions_close),
