@@ -9,6 +9,17 @@ So judge bias is corrected with a model that is proven on the DOGFOOD fixture da
 Built for [DOGFOOD 2026](https://dogfoodhack.com) ("build the platform that will judge you").
 MIT licensed.
 
+## Verified, not just claimed
+
+| Tiers | Checked by | Result |
+|---|---|---|
+| T1, T2 | `tools/acceptance_run.py`, the published `run.py` byte for byte | [7 of 7 pass](acceptance-report.txt) |
+| T3, T4 | [`tools/acceptance_extended.py`](tools/acceptance_extended.py): the same kind of checker, for the tiers `run.py` has no checks for | [39 of 39 pass](acceptance-report-extended.txt); every verdict lists the HTTP requests it rests on |
+| All of it | 76 tests, and CI running both checkers against a real `docker compose up` on every push | [`tests/`](tests), [`ci.yml`](.github/workflows/ci.yml) |
+
+The extended checker was written by us, so it is built to be checked rather than trusted: one standard-library file you can read in ten minutes, talking to the portal only over HTTP, and relying on nothing the server says about itself (it verifies signatures with its own Ed25519, receives webhooks on its own listener, and recomputes vote seals).
+The [table below](#every-t3-and-t4-bullet-and-the-checks-that-cover-it) maps every T3 and T4 bullet from the spec to its checks.
+
 ## Run it
 
 ```
@@ -53,7 +64,7 @@ Without Docker: `pip install -r requirements.txt`, then `PLUMB_DEMO=1 python -m 
 `.dogfood.toml` claims **T1, T2, T3 and T4**, and every tier is checked by a program, not by this README:
 
 * **T1 and T2**: the DOGFOOD checker, `tools/acceptance_run.py` (the published `run.py`, byte for byte). The committed [`acceptance-report.txt`](acceptance-report.txt) shows 7 of 7 passing. It has no checks for T3 and T4, so it lists them as claimed but not verified.
-* **T3 and T4**: [`tools/acceptance_extended.py`](tools/acceptance_extended.py), written the same way: one standard-library Python file that makes plain HTTP requests to the running portal. It imports its own scratch copy of the fixtures through the bulk import API, runs a real community vote with throwaway voters from open to closed, receives the webhooks on a listener of its own, recomputes every vote seal, and verifies every signed record with a pure-Python Ed25519, so it relies on nothing the server says about itself. The committed [`acceptance-report-extended.txt`](acceptance-report-extended.txt) shows 38 of 38 passing. Run it yourself: `python3 tools/acceptance_extended.py .dogfood.toml` (about 45 seconds).
+* **T3 and T4**: [`tools/acceptance_extended.py`](tools/acceptance_extended.py), written the same way: one standard-library Python file that makes plain HTTP requests to the running portal. It imports its own scratch copy of the fixtures through the bulk import API, runs a real community vote with throwaway voters from open to closed, receives the webhooks on a listener of its own, recomputes every vote seal, and verifies every signed record with a pure-Python Ed25519, so it relies on nothing the server says about itself. The committed [`acceptance-report-extended.txt`](acceptance-report-extended.txt) shows 39 of 39 passing, each with its requests. Run it yourself: `python3 tools/acceptance_extended.py .dogfood.toml --evidence` (about 45 seconds).
 
 CI runs both checkers against a real `docker compose up` on every push.
 
@@ -68,6 +79,23 @@ Community voting (organizers choose: any account, or participants only); comment
 
 **T4 stretch** (verified by the extended checker; see it in the replay event).
 A JSON API for every UI action with an OpenAPI document ([`/api`](http://localhost:8080/api), [`docs/openapi.json`](docs/openapi.json)); webhooks that stream the audit log with HMAC signatures, managed from the *Integrations* tab; certificates; signed, publicly verifiable judge participation records; an embeddable gallery widget with a copyable snippet; bulk import and export in the fixture format.
+
+### Every T3 and T4 bullet, and the checks that cover it
+
+Check names as they appear in [`acceptance-report-extended.txt`](acceptance-report-extended.txt).
+
+| Spec bullet | Checks |
+|---|---|
+| T3: community voting (email gated, link based or authenticated) | organizer opens a community vote; voters can sign up; a vote counts once per project; votes per voter are capped; no voting for your own team; judges cannot vote; anonymous visitors cannot vote |
+| T3: project comments | comments are posted and public; organizers can hide a comment |
+| T3: results hidden during the voting window | vote counts hidden from organizers; audit log does not reveal votes; abuse signals do not name projects; an open vote cannot be cut short; results unpublishable during voting; counts appear when voting closes; revealed votes match the sealed log; a closed vote cannot reopen |
+| T3: randomized project ordering on ballots | ballot order is random per voter; ballot order is stable for a voter |
+| T3: anti-abuse (rate limits, duplicate detection, audit trail) | vote flooding is rate limited; duplicate submissions are detected; new accounts voting are flagged; organizers void votes with a reason; audit trail records the moderation |
+| T4: REST API and webhooks | OpenAPI covers the UI's actions; API tokens work and can be revoked; webhook registered; webhooks deliver every action; webhook deliveries are signed; webhook deliveries arrive in order |
+| T4: certificate and record generation | teams get certificates; results publish once voting closed |
+| T4: signed, publicly verifiable judge participation records | every record's Ed25519 signature verifies; a tampered record fails verification; judge record matches the judge's own scores |
+| T4: embeddable gallery widget | gallery widget can be framed; other pages refuse framing |
+| T4: bulk import and export | bulk import creates an event; export then import round-trips |
 
 **Bonus challenges.**
 Normalization proof ([JUDGING.md section 5](JUDGING.md#5-the-normalization-proof), [`docs/normalization-proof.md`](docs/normalization-proof.md), `tools/normalization_proof.py`, checked by `tests/test_proof.py`).

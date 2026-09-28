@@ -136,12 +136,17 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+# Every request, in order, so each check can show the requests behind it.
+REQUESTS: list[tuple[str, str, str, int]] = []
+
+
 class Client:
     """One visitor: a cookie jar, or a fixed auth header."""
 
-    def __init__(self, base: str, header: str | None = None):
+    def __init__(self, base: str, header: str | None = None, who: str = "anonymous"):
         self.base = base
         self.header = header
+        self.who = who
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), _NoRedirect)
 
@@ -160,9 +165,11 @@ class Client:
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
         try:
             with self.opener.open(req, timeout=20) as r:
-                return r.status, r.read().decode("utf-8", "replace"), {k.lower(): v for k, v in r.headers.items()}
+                out = r.status, r.read().decode("utf-8", "replace"), {k.lower(): v for k, v in r.headers.items()}
         except urllib.error.HTTPError as e:
-            return e.code, e.read().decode("utf-8", "replace"), {k.lower(): v for k, v in e.headers.items()}
+            out = e.code, e.read().decode("utf-8", "replace"), {k.lower(): v for k, v in e.headers.items()}
+        REQUESTS.append((method, path.split("?")[0] if path.startswith("/api/v1/events/import") else path, self.who, out[0]))
+        return out
 
     def json(self, method, path, body=None):
         status, text, _ = self.request(method, path, body=body)
@@ -181,20 +188,31 @@ class Client:
 
 
 class Report:
-    def __init__(self):
+    def __init__(self, evidence: bool = False):
         self.checks = []
+        self.evidence = evidence
+        self._seen = 0
 
     def check(self, tier, label, ok, *notes):
-        self.checks.append((tier, label, bool(ok), [n for n in notes if n]))
+        """Record a verdict with the requests made since the previous check."""
+        reqs = REQUESTS[self._seen:]
+        self._seen = len(REQUESTS)
+        self.checks.append((tier, label, bool(ok), [n for n in notes if n], reqs))
         return bool(ok)
 
     def print(self, claimed):
         width = max(len(c[1]) for c in self.checks) + 2
-        for tier, label, ok, notes in self.checks:
+        for tier, label, ok, notes, reqs in self.checks:
             print(f"{tier}  {label} {'.' * (width - len(label))} {'PASS' if ok else 'FAIL'}")
             if not ok:
                 for n in notes:
                     print(f"       {n}")
+            if self.evidence:
+                if not reqs:
+                    print("       (rests on the requests listed under the check above)")
+                shown = reqs if len(reqs) <= 8 else reqs[:6] + [None] + reqs[-1:]
+                for r in shown:
+                    print("         ..." if r is None else f"       {r[0]:<6} {r[1]}  as {r[2]}  -> {r[3]}")
         verified = [t for t in ("T3", "T4") if all(c[2] for c in self.checks if c[0] == t)]
         print()
         print(f"checked T3 T4, verified {' '.join(verified) or 'nothing'}")
@@ -257,9 +275,9 @@ def ts(seconds: float) -> str:
 def run(cfg, fixtures, webhook_host, rep: Report):
     base = cfg["portal"]["base_url"].rstrip("/")
     auth = cfg.get("auth", {})
-    admin = Client(base, auth.get("admin"))
-    judge = Client(base, auth.get("judge_a"))
-    participant = Client(base, auth.get("participant"))
+    admin = Client(base, auth.get("admin"), "admin")
+    judge = Client(base, auth.get("judge_a"), "judge_a")
+    participant = Client(base, auth.get("participant"), "participant")
     anon = Client(base)
 
     # Setup: a scratch copy of the fixture event, imported through the API (itself a T4 check).
@@ -288,7 +306,7 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     # --- T3: voting ---
     voters = []
     for i in range(4):
-        c = Client(base)
+        c = Client(base, who=f"voter{i + 1}")
         email = f"check-{eid}-{i}@example.net"
         status, _, _ = c.form("/signup", {"name": f"Check voter {i}", "email": email, "password": "check-voter-pass",
                                           "next": "/"}, "/signup")
@@ -307,9 +325,9 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     v1, v2, v3, v4 = (c for c, _ in voters)
     s_a = v1.request("POST", f"/api/v1/projects/{projects[1]}/vote")[0]
     s_dup = v1.request("POST", f"/api/v1/projects/{projects[1]}/vote")[0]
+    rep.check("T3", "a vote counts once per project", (s_a, s_dup) == (204, 409), f"vote then repeat: {s_a}, {s_dup}")
     s_b = v1.request("POST", f"/api/v1/projects/{projects[2]}/vote")[0]
     s_over = v1.request("POST", f"/api/v1/projects/{projects[3]}/vote")[0]
-    rep.check("T3", "a vote counts once per project", (s_a, s_dup) == (204, 409), f"vote then repeat: {s_a}, {s_dup}")
     rep.check("T3", "votes per voter are capped", (s_b, s_over) == (204, 409), f"second then third vote: {s_b}, {s_over}")
     v2.request("POST", f"/api/v1/projects/{projects[1]}/vote")
     v3.request("POST", f"/api/v1/projects/{projects[4]}/vote")
@@ -353,6 +371,10 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     v3_id = next((a["id"] for a in abuse["fresh_accounts"] if a["email"] == voters[2][1]), None)
     status, voided = admin.json("POST", f"/api/v1/events/{eid}/void-votes", {"voter_id": v3_id, "reason": "check"})
     rep.check("T3", "organizers void votes with a reason", status == 200 and voided.get("removed") == 2, f"{status} {voided}")
+    _, dups = admin.json("GET", f"/api/v1/events/{eid}/duplicates")
+    dup_ok = isinstance(dups, list) and any("same team" in d["reasons"] for d in dups)
+    rep.check("T3", "duplicate submissions are detected", dup_ok, f"duplicates: {dups}",
+              "the fixtures submit Dry Harbour twice from one team")
     codes = [v4.request("DELETE", f"/api/v1/projects/{projects[1]}/vote")[0] for _ in range(35)]
     rep.check("T3", "vote flooding is rate limited", 429 in codes, f"35 rapid requests: {sorted(set(codes))}")
     _, log = admin.json("GET", f"/api/v1/events/{eid}/audit")
@@ -450,7 +472,7 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     rep.check("T4", "OpenAPI covers the UI's actions", not missing and "securitySchemes" in spec.get("components", {}),
               f"missing: {missing}")
     status, tok = admin.json("POST", "/api/v1/me/tokens", {"label": f"check {eid}"})
-    bearer = Client(base, f"Authorization: Bearer {tok['token']}") if status == 201 else None
+    bearer = Client(base, f"Authorization: Bearer {tok['token']}", "admin's token") if status == 201 else None
     s_me = bearer.request("GET", "/api/v1/me")[0] if bearer else 0
     hint = next((t["hint"] for t in admin.json("GET", "/api/v1/me/tokens")[1] if t["label"] == f"check {eid}"), "")
     admin.request("DELETE", f"/api/v1/me/tokens/{hint}")
@@ -462,6 +484,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("config", help="path to .dogfood.toml")
     ap.add_argument("--fixtures", default=None, help="path to fixtures.json (default: beside the config)")
+    ap.add_argument("--evidence", action="store_true",
+                    help="under each verdict, list the HTTP requests it rests on")
     ap.add_argument("--webhook-host", default=os.environ.get("PLUMB_CHECK_WEBHOOK_HOST", "host.docker.internal"),
                     help="how the portal reaches this machine (default host.docker.internal)")
     args = ap.parse_args()
@@ -469,10 +493,11 @@ def main():
     fixtures_path = args.fixtures or os.path.join(os.path.dirname(os.path.abspath(args.config)), "fixtures.json")
     fixtures = json.load(open(fixtures_path, encoding="utf-8"))
     print("Plumb extended acceptance report (T3, T4)")
+    print("Every verdict comes from HTTP requests to the running portal, listed under it with --evidence.")
     print(f"portal: {cfg['portal']['base_url']}")
     print(f"fixtures: {os.path.basename(fixtures_path)}, imported as a scratch event")
     print()
-    rep = Report()
+    rep = Report(evidence=args.evidence)
     try:
         run(cfg, fixtures, args.webhook_host, rep)
     except Exception as exc:  # report, never crash without a verdict

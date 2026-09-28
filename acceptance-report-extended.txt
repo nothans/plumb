@@ -1,44 +1,119 @@
 Plumb extended acceptance report (T3, T4)
+Every verdict comes from HTTP requests to the running portal, listed under it with --evidence.
 portal: http://localhost:8080
 fixtures: fixtures.json, imported as a scratch event
 
 T4  bulk import creates an event ................. PASS
+       POST   /api/v1/events/import  as admin  -> 201
 T4  webhook registered ........................... PASS
+       POST   /api/v1/events/evt_chk_6ab9d7fc/webhooks  as admin  -> 201
 T3  organizer opens a community vote ............. PASS
+       PATCH  /api/v1/events/evt_chk_6ab9d7fc  as admin  -> 200
 T3  voters can sign up ........................... PASS
+       GET    /api/v1/projects?event=evt_chk_6ab9d7fc&limit=200  as anonymous  -> 200
+       GET    /signup  as voter1  -> 200
+       POST   /signup  as voter1  -> 303
+       GET    /signup  as voter2  -> 200
+       POST   /signup  as voter2  -> 303
+       GET    /signup  as voter3  -> 200
+         ...
+       POST   /signup  as voter4  -> 303
 T3  ballot order is random per voter ............. PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/ballot  as voter1  -> 200
+       GET    /api/v1/events/evt_chk_6ab9d7fc/ballot  as voter1  -> 200
+       GET    /api/v1/events/evt_chk_6ab9d7fc/ballot  as voter2  -> 200
+       GET    /api/v1/events/evt_chk_6ab9d7fc/ballot  as voter2  -> 200
 T3  ballot order is stable for a voter ........... PASS
+       (rests on the requests listed under the check above)
 T3  a vote counts once per project ............... PASS
+       POST   /api/v1/projects/prj_0665f2783d03/vote  as voter1  -> 204
+       POST   /api/v1/projects/prj_0665f2783d03/vote  as voter1  -> 409
 T3  votes per voter are capped ................... PASS
+       POST   /api/v1/projects/prj_0d0c4b51661a/vote  as voter1  -> 204
+       POST   /api/v1/projects/prj_0fbcf6aadd90/vote  as voter1  -> 409
 T3  no voting for your own team .................. PASS
+       POST   /api/v1/projects/prj_0665f2783d03/vote  as voter2  -> 204
+       POST   /api/v1/projects/prj_107d47639775/vote  as voter3  -> 204
+       POST   /api/v1/projects/prj_23cd58930b30/vote  as voter3  -> 204
+       GET    /api/v1/events/evt_chk_6ab9d7fc/team  as participant  -> 200
+       POST   /api/v1/projects/prj_23cd58930b30/vote  as participant  -> 403
 T3  judges cannot vote ........................... PASS
+       POST   /api/v1/projects/prj_26ef14d09870/vote  as judge_a  -> 403
 T3  anonymous visitors cannot vote ............... PASS
+       POST   /api/v1/projects/prj_26ef14d09870/vote  as anonymous  -> 401
 T3  vote counts hidden from organizers ........... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/votes  as admin  -> 403
 T3  audit log does not reveal votes .............. PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/audit?action=vote.cast  as admin  -> 200
 T3  abuse signals do not name projects ........... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/abuse  as admin  -> 200
 T3  an open vote cannot be cut short ............. PASS
+       PATCH  /api/v1/events/evt_chk_6ab9d7fc  as admin  -> 409
 T3  results unpublishable during voting .......... PASS
+       POST   /api/v1/events/evt_chk_6ab9d7fc/publish  as admin  -> 409
 T3  comments are posted and public ............... PASS
+       POST   /api/v1/projects/prj_027d83484e4a/comments  as voter1  -> 201
+       GET    /projects/prj_027d83484e4a  as anonymous  -> 200
 T3  organizers can hide a comment ................ PASS
+       POST   /api/v1/comments/cmt_b7ca0bc75012/hide  as admin  -> 204
+       GET    /projects/prj_027d83484e4a  as anonymous  -> 200
 T3  new accounts voting are flagged .............. PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/abuse  as admin  -> 200
 T3  organizers void votes with a reason .......... PASS
+       POST   /api/v1/events/evt_chk_6ab9d7fc/void-votes  as admin  -> 200
+T3  duplicate submissions are detected ........... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/duplicates  as admin  -> 200
 T3  vote flooding is rate limited ................ PASS
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 404
+         ...
+       DELETE /api/v1/projects/prj_0665f2783d03/vote  as voter4  -> 429
 T3  audit trail records the moderation ........... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/audit  as admin  -> 200
 T3  counts appear when voting closes ............. PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/votes  as admin  -> 200
 T3  revealed votes match the sealed log .......... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/votes/reveal  as admin  -> 200
 T3  a closed vote cannot reopen .................. PASS
+       PATCH  /api/v1/events/evt_chk_6ab9d7fc  as admin  -> 409
 T4  results publish once voting closed ........... PASS
+       POST   /api/v1/events/evt_chk_6ab9d7fc/publish  as admin  -> 200
 T4  every record's Ed25519 signature verifies .... PASS
+       GET    /.well-known/plumb-key.json  as anonymous  -> 200
+       GET    /api/v1/events/evt_chk_6ab9d7fc/records  as anonymous  -> 200
 T4  a tampered record fails verification ......... PASS
+       (rests on the requests listed under the check above)
 T4  teams get certificates ....................... PASS
+       GET    /records/rec_08cda540b68e  as anonymous  -> 200
 T4  judge record matches the judge's own scores .. PASS
+       GET    /api/v1/me  as judge_a  -> 200
+       GET    /api/judge/scores?event=evt_chk_6ab9d7fc  as judge_a  -> 200
 T4  webhooks deliver every action ................ PASS
+       (rests on the requests listed under the check above)
 T4  webhook deliveries are signed ................ PASS
+       (rests on the requests listed under the check above)
 T4  webhook deliveries arrive in order ........... PASS
+       (rests on the requests listed under the check above)
 T4  gallery widget can be framed ................. PASS
+       GET    /embed/events/evt_chk_6ab9d7fc?limit=48  as anonymous  -> 200
+       GET    /events/evt_chk_6ab9d7fc  as anonymous  -> 200
 T4  other pages refuse framing ................... PASS
+       (rests on the requests listed under the check above)
 T4  export then import round-trips ............... PASS
+       GET    /api/v1/events/evt_chk_6ab9d7fc/export  as admin  -> 200
+       POST   /api/v1/events/import  as admin  -> 201
+       GET    /api/v1/events/evt_chk_6ab9d7fc_rt/export  as admin  -> 200
 T4  OpenAPI covers the UI's actions .............. PASS
+       GET    /api/openapi.json  as anonymous  -> 200
 T4  API tokens work and can be revoked ........... PASS
+       POST   /api/v1/me/tokens  as admin  -> 201
+       GET    /api/v1/me  as admin's token  -> 200
+       GET    /api/v1/me/tokens  as admin  -> 200
+       DELETE /api/v1/me/tokens/042d87b5  as admin  -> 204
+       GET    /api/v1/me  as admin's token  -> 401
 
 checked T3 T4, verified T3 T4
