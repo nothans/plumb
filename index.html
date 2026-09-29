@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumb: hackathon judging you can check</title>
+<meta name="description" content="Plumb is a self-hosted hackathon submission and judging portal whose results you can check: judge bias corrected with calibrated uncertainty, a sealed community vote, a hash-chained audit log and signed results. Built for DOGFOOD 2026.">
+<meta property="og:title" content="Plumb: hackathon judging you can check">
+<meta property="og:description" content="A self-hosted hackathon portal whose results you can check. Built for DOGFOOD 2026.">
+<meta property="og:image" content="https://nothans.github.io/plumb/poster.jpg">
+<link rel="icon" href="plumb.svg" type="image/svg+xml">
+<style>
+  :root {
+    --ground: #f3f5f7; --surface: #fbfcfd; --ink: #16202a; --ink-2: #3f4b58; --ink-3: #5b6875;
+    --line: #d5dce3; --line-2: #e4e9ee; --accent: #0b6663; --accent-soft: #e2f1f0; --ok: #1d6b43; --ok-soft: #e3f2e9;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans", Ubuntu, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #12181e; --surface: #182028; --ink: #e6ecf1; --ink-2: #bcc6cf; --ink-3: #97a3ae;
+      --line: #2d3945; --line-2: #243039; --accent: #5cc2bb; --accent-soft: #173432; --ok: #7fd1a1; --ok-soft: #173326;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 17px/1.6 var(--sans); }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  header { border-bottom: 1px solid var(--line); background: var(--surface); }
+  header .wrap { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; padding-bottom: 14px; }
+  .brand { display: flex; gap: 8px; align-items: center; font-weight: 750; font-size: 1.15rem; color: var(--ink); text-decoration: none; }
+  .brand svg { color: var(--accent); }
+  .btn { display: inline-block; font-weight: 600; font-size: 0.95rem; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink); background: var(--surface); text-decoration: none; }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+  main { padding: 48px 0 80px; }
+  h1 { font-size: clamp(2rem, 5vw, 2.8rem); line-height: 1.15; letter-spacing: -0.015em; margin: 0 0 16px; }
+  h2 { font-size: 1.3rem; margin: 56px 0 12px; }
+  p { max-width: 68ch; margin: 0 0 14px; color: var(--ink-2); }
+  .lede { font-size: 1.15rem; color: var(--ink); }
+  video { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #0d1418; margin: 28px 0 8px; }
+  .caption { font-size: 0.9rem; color: var(--ink-3); }
+  pre { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: 0.92rem/1.6 var(--mono); color: var(--ink); }
+  code { font-family: var(--mono); font-size: 0.92em; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 0.97rem; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th { font-size: 0.82rem; color: var(--ink-3); font-weight: 650; }
+  tr:last-child td { border-bottom: 0; }
+  .pass { display: inline-block; padding: 1px 9px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 650; font-size: 0.85rem; white-space: nowrap; }
+  .points { display: grid; gap: 28px 32px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 8px; }
+  td.nowrap { white-space: nowrap; }
+  .points div { border-top: 3px solid var(--accent); padding-top: 12px; }
+  .points h3 { margin: 0 0 6px; font-size: 1.02rem; }
+  .points p { font-size: 0.95rem; margin: 0; }
+  .note { background: var(--accent-soft); border-radius: 8px; padding: 12px 16px; color: var(--ink); max-width: none; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; list-style: none; }
+  footer { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--ink-3); font-size: 0.9rem; }
+  @media (max-width: 640px) { .points { grid-template-columns: minmax(0, 1fr); } body { font-size: 16px; } main { padding-top: 32px; } th, td { padding: 10px 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 8h8l-4 14.5z" fill="currentColor"/></svg>Plumb</a>
+    <a class="btn" href="https://github.com/nothans/plumb">Source on GitHub</a>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <h1>Hackathon judging you can check.</h1>
+    <p class="lede">Plumb is a self-hosted hackathon submission and judging portal. It corrects for harsh and generous judges, says how sure it is about every ranking, keeps a tamper-evident log of everything that happens, and signs its results so anyone can verify them offline.</p>
+    <p>Built for <a href="https://dogfoodhack.com">DOGFOOD 2026</a>, "build the platform that will judge you". MIT licensed.</p>
+
+    <video controls preload="metadata" poster="poster.jpg" aria-label="Plumb demo video, 2 minutes 52 seconds, captioned">
+      <source src="plumb-demo.mp4" type="video/mp4">
+      <a href="plumb-demo.mp4">Download the demo video (MP4)</a>
+    </video>
+    <p class="caption">The demo, 2:52, captions on screen, no voiceover: a finished event, an organizer mid-judging, the integrity checks, a judge, and a participant.</p>
+
+    <h2>Run it</h2>
+    <pre>git clone https://github.com/nothans/plumb
+cd plumb
+docker compose up          # then open http://localhost:8080</pre>
+    <p class="note">There is no hosted demo on purpose: Plumb is built to run on an organizer's own machine, and it needs no network once it is running. It boots seeded with the DOGFOOD fixture data, three events at different stages, and ready-made logins printed on startup. The <a href="https://github.com/nothans/plumb#a-five-minute-tour">five-minute tour</a> walks through it.</p>
+
+    <h2>Verified, not just claimed</h2>
+    <table>
+      <thead><tr><th>Tiers</th><th>Checked by</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td class="nowrap">T1, T2</td><td>The official DOGFOOD checker, <code>run.py</code>, byte for byte</td><td><a class="pass" href="https://github.com/nothans/plumb/blob/main/acceptance-report.txt">7 of 7 pass</a></td></tr>
+        <tr><td class="nowrap">T3, T4</td><td>An extended checker in the same style: plain HTTP against the running portal, trusting nothing the server says about itself, with the requests behind every verdict listed</td><td><a class="pass" href="https://github.com/nothans/plumb/blob/main/acceptance-report-extended.txt">39 of 39 pass</a></td></tr>
+        <tr><td>All of it</td><td>76 tests, and CI running both checkers against a real <code>docker compose up</code> on every push</td><td><a class="pass" href="https://github.com/nothans/plumb/actions">CI</a></td></tr>
+      </tbody>
+    </table>
+
+    <h2>What is different</h2>
+    <div class="points">
+      <div><h3>Honest rankings</h3><p>A mixed model removes each judge's lean, and every score gets a 90% interval and a calibrated chance of beating the next one. On the DOGFOOD fixtures, the honest answer is that projects are statistically tied, and Plumb says so instead of printing a confident 1 to 40.</p></div>
+      <div><h3>A proof, not a paragraph</h3><p>A simulation on the fixture's own judge graph shows the method beats raw averages and z-scores wherever judges differ, ties them when they do not, and that its probabilities come true as often as they claim. A regression test keeps it that way.</p></div>
+      <div><h3>A vote nobody can steer</h3><p>Ballots are shuffled per voter, counts stay hidden from everyone, organizers included, votes are sealed in the log until the vote closes, and an open vote cannot be cut short.</p></div>
+      <div><h3>Results you can verify</h3><p>Every change lands in a hash-chained audit log the database will not let anyone edit. Published results, judge records and team certificates are Ed25519-signed and check out offline.</p></div>
+    </div>
+
+    <h2>Read more</h2>
+    <ul class="links">
+      <li><a href="https://github.com/nothans/plumb/blob/main/README.md">README</a></li>
+      <li><a href="https://github.com/nothans/plumb/blob/main/JUDGING.md">How judging works</a></li>
+      <li><a href="https://github.com/nothans/plumb/blob/main/docs/normalization-proof.md">The normalization proof</a></li>
+      <li><a href="https://github.com/nothans/plumb/blob/main/THREAT-MODEL.md">Threat model</a></li>
+      <li><a href="https://github.com/nothans/plumb/blob/main/ARCHITECTURE.md">Architecture</a></li>
+      <li><a href="https://github.com/nothans/plumb/blob/main/DATA-MODEL.md">Data model</a></li>
+      <li><a href="plumb-demo.mp4" download>Download the video</a></li>
+    </ul>
+  </div>
+</main>
+<footer>
+  <div class="wrap">Plumb, by Hans Scharler, for DOGFOOD 2026. MIT licensed. <a href="https://github.com/nothans/plumb">github.com/nothans/plumb</a></div>
+</footer>
+</body>
+</html>
