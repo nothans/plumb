@@ -9,6 +9,8 @@ So judge bias is corrected with a model that is proven on the DOGFOOD fixture da
 Built for [DOGFOOD 2026](https://dogfoodhack.com) ("build the platform that will judge you").
 MIT licensed.
 
+**[Watch the 3-minute demo](https://nothans.github.io/plumb/)**: a finished event, an organizer mid-judging, the integrity checks, a judge, and a participant.
+
 ## Verified, not just claimed
 
 | Tiers | Checked by | Result |
@@ -46,6 +48,15 @@ Three events are seeded, so every stage of an event can be seen on first boot:
 * **Sample Hack 2026 (published replay)**: the same fixture data run to the end. Prizes awarded, a closed community vote with a planted cluster of sock-puppet accounts (two already voided, three waiting for a decision), a hidden spam comment, and signed results, judge records and certificates.
 * **Plumb Demo Jam**: empty, with submissions open for 7 days, to try the participant side from scratch.
 
+**Offline install.** The running portal needs no network. The first build downloads the Python base image and packages once; for a machine that has never had them, build or download the image elsewhere and carry it over:
+
+```
+docker compose build && docker save plumb:local | gzip > plumb-image.tar.gz   # on a connected machine
+docker load -i plumb-image.tar.gz && docker compose up --no-build          # on the offline one
+```
+
+The [latest release](https://github.com/nothans/plumb/releases/latest) attaches that image file, built from the tagged commit, so the first step can be a download.
+
 Without Docker: `pip install -r requirements.txt`, then `PLUMB_DEMO=1 python -m app.cli bootstrap` and `uvicorn app.main:get_app --factory --port 8080`.
 
 ## A five-minute tour
@@ -70,6 +81,8 @@ CI runs both checkers against a real `docker compose up` on every push.
 
 **T1 core** (verified by the checker).
 Login and signup, roles (visitor, participant, judge, organizer, admin), events with configurable dates, tracks and prizes, teams by invite link, draft-and-edit submissions, a deadline enforced in the backend, a public gallery with search and filter.
+
+**Winners.** The fixture scores carry no winners, so Plumb decides them: an overall ranking and a ranking within each track, each with calibrated confidence, and at publication the organizer confirms a winner per prize (overall prizes down the overall ranking, track prizes to the track leader), all signed into the results record ([JUDGING.md section 9](JUDGING.md#9-winners)).
 
 **T2 judging** (verified by the checker).
 Judge invitation links; track-aware, conflict-aware, coverage-first assignment; an organizer-weighted rubric; backend role isolation; a live progress dashboard; documented cross-judge normalization with a proof ([JUDGING.md](JUDGING.md)); CSV export.
