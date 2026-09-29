@@ -74,11 +74,11 @@
     <p class="lede">Plumb is a self-hosted hackathon submission and judging portal. It corrects for harsh and generous judges, says how sure it is about every ranking, keeps a tamper-evident log of everything that happens, and signs its results so anyone can verify them offline.</p>
     <p>Built for <a href="https://dogfoodhack.com">DOGFOOD 2026</a>, "build the platform that will judge you". MIT licensed.</p>
 
-    <video controls preload="metadata" poster="poster.jpg" aria-label="Plumb demo video, 2 minutes 52 seconds, captioned">
+    <video controls preload="metadata" poster="poster.jpg" aria-label="Plumb demo video, 4 minutes 3 seconds, captioned">
       <source src="plumb-demo.mp4" type="video/mp4">
       <a href="plumb-demo.mp4">Download the demo video (MP4)</a>
     </video>
-    <p class="caption">The demo, 2:52, captions on screen, no voiceover: a finished event, an organizer mid-judging, the integrity checks, a judge, and a participant.</p>
+    <p class="caption">The demo, 4:03, captions on screen, no voiceover, in five chapters: a finished event and its signed records, an organizer mid-judging, the integrity checks, a judge scoring, and a participant submitting.</p>
 
     <h2>Run it</h2>
     <pre>git clone https://github.com/nothans/plumb
@@ -92,7 +92,7 @@ docker compose up          # then open http://localhost:8080</pre>
       <tbody>
         <tr><td class="nowrap">T1, T2</td><td>The official DOGFOOD checker, <code>run.py</code>, byte for byte</td><td><a class="pass" href="https://github.com/nothans/plumb/blob/main/acceptance-report.txt">7 of 7 pass</a></td></tr>
         <tr><td class="nowrap">T3, T4</td><td>An extended checker in the same style: plain HTTP against the running portal, trusting nothing the server says about itself, with the requests behind every verdict listed</td><td><a class="pass" href="https://github.com/nothans/plumb/blob/main/acceptance-report-extended.txt">39 of 39 pass</a></td></tr>
-        <tr><td>All of it</td><td>76 tests, and CI running both checkers against a real <code>docker compose up</code> on every push</td><td><a class="pass" href="https://github.com/nothans/plumb/actions">CI</a></td></tr>
+        <tr><td>All of it</td><td>82 tests, and CI running both checkers against a real <code>docker compose up</code> on every push</td><td><a class="pass" href="https://github.com/nothans/plumb/actions">CI</a></td></tr>
       </tbody>
     </table>
 
