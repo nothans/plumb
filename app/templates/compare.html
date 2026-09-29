@@ -17,7 +17,7 @@
   <section class="panel">
     <h2 class="mt-0">{{ p.title }}</h2>
     <p class="muted small">{{ p.team_name }}{% if p.track_name %} · {{ p.track_name }}{% endif %}</p>
-    {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+    {% if p.summary | blurb %}<p>{{ p.summary }}</p>{% endif %}
     {% if p.description %}<p class="small">{{ p.description }}</p>{% endif %}
     <div class="actions">
       {% if p.repo_url %}<a class="btn" href="{{ p.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}

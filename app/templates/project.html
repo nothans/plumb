@@ -6,7 +6,7 @@
   <div>
     <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a> / <a href="/projects?event={{ event.id }}">Gallery</a></div>
     <h1>{{ project.title }}</h1>
-    {% if project.summary %}<p>{{ project.summary }}</p>{% endif %}
+    {% if project.summary | blurb %}<p>{{ project.summary }}</p>{% endif %}
     <div class="actions mt-s">
       {% if project.track_name %}<span class="tag">{{ project.track_name }}</span>{% endif %}
       {% if project.status == 'draft' %}<span class="tag warn">Draft, visible to your team only</span>{% endif %}
@@ -33,7 +33,7 @@
 <div class="split">
   <div>
     <div class="panel">
-      {% if project.description %}<p>{{ project.description }}</p>{% elif is_member %}<p class="muted">No description yet. <a href="/projects/{{ project.id }}/edit">Add one</a> so judges have more to go on.</p>{% endif %}
+      {% if project.description %}<p>{{ project.description }}</p>{% elif is_member and phase.submissions == 'open' %}<p class="muted">No description yet. <a href="/projects/{{ project.id }}/edit">Add one</a> so judges have more to go on.</p>{% elif is_member %}<p class="muted">No description. Submissions closed {{ event.submissions_close | ts }}, so this entry is final.</p>{% endif %}
       <div class="actions">
         {% if project.repo_url %}<a class="btn" href="{{ project.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}
         {% if project.demo_url %}<a class="btn" href="{{ project.demo_url }}" rel="nofollow noopener" target="_blank">Demo</a>{% endif %}

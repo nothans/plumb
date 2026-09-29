@@ -61,6 +61,7 @@
     <div class="stat"><div class="n">{{ prog.idle_judges | length }}</div><div class="l">judges with open queues</div></div>
     {% if event.voting_mode != 'off' %}<div class="stat"><div class="n">{{ turnout.voters }}</div><div class="l">community voters</div></div>{% endif %}
   </div>
+  {% set set_aside = prog.set_aside %}{% if set_aside %}<p class="small muted mt-s">{{ set_aside }} more {{ 'review scores' if set_aside == 1 else 'reviews score' }} an entry dropped as a duplicate or disqualified. {{ 'It stays' if set_aside == 1 else 'They stay' }} in the exports, not in the ranking.</p>{% endif %}
   <p class="small mt-m mb-0">{{ covered }} of {{ prog.projects | length }} projects at the target of {{ prog.target }} reviews</p>
   <progress max="{{ [prog.projects | length, 1] | max }}" value="{{ covered }}" aria-label="Projects at the review target"></progress>
 </div>

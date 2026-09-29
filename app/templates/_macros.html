@@ -45,7 +45,7 @@
 {% macro project_card(p, show_event=false) %}
 <article class="card">
   <h2 class="card-title"><a href="/projects/{{ p.id }}">{{ p.title }}</a></h2>
-  {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+  {% if p.summary | blurb %}<p>{{ p.summary }}</p>{% endif %}
   <div class="meta">
     <span>{{ p.team_name }}</span>
     {% if p.track_name %}<span class="tag">{{ p.track_name }}</span>{% endif %}

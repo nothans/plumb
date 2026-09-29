@@ -1,13 +1,16 @@
 {% from "_macros.html" import interval, interval_legend, certainty %}
 {# Shared by the public results page and the organizer's live view. #}
+{% set separated = fit.projects[:-1] | map(attribute='p_above_next') | reject('none') | select('ge', 0.6) | list %}
+{% set all_ties = fit.projects | length > 1 and not separated %}
 {{ interval_legend() }}
+{% if all_ties %}<p class="small">No project clears 60% against the one ranked below it, so every neighbouring pair is a tie and the "beats next" column is left out. Read this order as a list, not a ladder.</p>{% endif %}
 <div class="table-wrap">
 <table>
   <thead><tr>
     <th class="num">Rank</th><th>Project</th><th class="col-opt">Track</th><th class="num col-opt">Reviews</th>
     <th class="num col-opt">Raw</th><th class="num">Adjusted</th>
     <th class="iv col-opt"><span class="axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></span></th>
-    <th class="num">Beats next</th>
+    {% if not all_ties %}<th class="num">Beats next</th>{% endif %}
   </tr></thead>
   <tbody>
   {% for p in fit.projects %}{% set proj = res.projects[p.project] %}
@@ -20,7 +23,7 @@
       <td class="num col-opt">{{ p.raw_mean | num }}</td>
       <td class="num"><strong>{{ p.adjusted | num }}</strong><br><span class="small muted">&plusmn;{{ (p.high - p.adjusted) | num }}</span></td>
       <td class="iv col-opt">{{ interval(p) }}</td>
-      <td class="num">{% if not loop.last %}{{ certainty(p.p_above_next) }}{% endif %}</td>
+      {% if not all_ties %}<td class="num">{% if not loop.last %}{{ certainty(p.p_above_next) }}{% endif %}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>

@@ -11,4 +11,16 @@
     <div class="actions"><button class="primary" type="submit">Log in</button><a href="/signup?next={{ next | urlencode }}">Create an account</a></div>
   </form>
 </div>
+{% if request.app.state.settings.demo %}
+<div class="panel narrow">
+  <h2>Demo logins</h2>
+  <p class="small">Password for all of them: <code>{{ demo_password }}</code></p>
+  <table><tbody>
+    <tr><td>Organizer</td><td class="mono small">organizer@example.org</td></tr>
+    <tr><td>Judge</td><td class="mono small">diego.herrera@example.org</td></tr>
+    <tr><td>Participant</td><td class="mono small">priya1@example.org</td></tr>
+    <tr><td>Admin</td><td class="mono small">admin@example.org</td></tr>
+  </tbody></table>
+</div>
+{% endif %}
 {% endblock %}

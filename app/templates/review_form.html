@@ -5,7 +5,7 @@
 <div class="page-head"><div>
   <div class="crumbs"><a href="/events/{{ event.id }}/judge">Your review queue</a></div>
   <h1>{{ project.title }}</h1>
-  {% if project.summary %}<p>{{ project.summary }}</p>{% endif %}
+  {% if project.summary | blurb %}<p>{{ project.summary }}</p>{% endif %}
 </div></div>
 <div class="split">
   <div class="panel">
@@ -39,7 +39,9 @@
       {% if project.repo_url %}<a class="btn" href="{{ project.repo_url }}" rel="nofollow noopener" target="_blank">Repository</a>{% endif %}
       {% if project.demo_url %}<a class="btn" href="{{ project.demo_url }}" rel="nofollow noopener" target="_blank">Demo</a>{% endif %}
     </div>
-    {% if review %}<p class="muted small mt-s">First saved {{ review.submitted_at | ts }}; last change {{ review.updated_at | ts }}. Every change is in the audit log.</p>{% endif %}
+    {% if review and imported and review.updated_at == review.submitted_at %}<p class="muted small mt-s">Imported with the event data; not changed since. Every change is in the audit log.</p>
+    {% elif review and imported %}<p class="muted small mt-s">Imported with the event data; last change {{ review.updated_at | ts }}. Every change is in the audit log.</p>
+    {% elif review %}<p class="muted small mt-s">First saved {{ review.submitted_at | ts }}; last change {{ review.updated_at | ts }}. Every change is in the audit log.</p>{% endif %}
   </aside>
 </div>
 {% endblock %}

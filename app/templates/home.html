@@ -14,7 +14,7 @@
 {% if events %}
 <div class="table-wrap panel">
 <table>
-  <thead><tr><th>Event</th><th class="col-opt">Status</th><th class="col-opt">Submissions close</th><th class="num">Projects</th><th class="col-opt">You</th></tr></thead>
+  <thead><tr><th>Event</th><th class="col-opt">Status</th><th class="col-opt">Submissions close</th><th class="num">Projects</th>{% if me %}<th class="col-opt">Your roles</th>{% endif %}</tr></thead>
   <tbody>
   {% for row in events %}{% set e = row.event %}
   <tr>
@@ -23,7 +23,7 @@
     <td class="col-opt"><div class="actions">{{ phase_tags(row.phase) }}</div></td>
     <td class="nowrap col-opt">{{ e.submissions_close | ts }}</td>
     <td class="num">{{ row.projects }}</td>
-    <td class="col-opt">{% for r in row.roles | sort %}<span class="tag">{{ r }}</span> {% endfor %}</td>
+    {% if me %}<td class="col-opt">{% for r in row.roles | sort %}<span class="tag">{{ r }}</span> {% endfor %}</td>{% endif %}
   </tr>
   {% endfor %}
   </tbody>

@@ -297,8 +297,7 @@ form.stack.wide { max-width: none; }
   .top-inner { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; padding: 10px 16px; }
   .nav { grid-column: 1 / -1; flex-wrap: nowrap; overflow-x: auto; }
   .nav a { white-space: nowrap; }
-  .subnav { flex-wrap: nowrap; overflow-x: auto; }
-  .subnav a { white-space: nowrap; }
+  .subnav a { white-space: nowrap; padding: 8px 10px; }
   main { padding: 24px 16px 64px; }
   .panel { padding: 16px; }
   .col-opt { display: none; }
@@ -331,7 +330,6 @@ a.tag:hover { text-decoration: underline; }
 ::placeholder { color: var(--ink-3); opacity: 1; }
 .only-mobile { display: none; }
 @media (max-width: 640px) {
-  .subnav { overflow-y: hidden; }
   .who { grid-row: 1; grid-column: 2; }
   .nav { grid-row: 2; }
   .winners li { grid-template-columns: 1fr; }

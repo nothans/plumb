@@ -374,6 +374,16 @@ def judge_scores(conn: sqlite3.Connection, actor: Actor | None, judge_id: str | 
     return reviews_for(conn, event_id=event_id, judge_id=target)
 
 
+def reviews_set_aside(conn: sqlite3.Connection, event_id: str) -> int:
+    """Reviews that score an entry that does not count (a dropped duplicate, a
+    disqualified entry). They stay in the database and exports, not in the ranking."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM reviews v JOIN projects p ON p.id = v.project_id WHERE p.event_id = ? "
+        "AND (p.duplicate_of IS NOT NULL OR p.disqualified_reason IS NOT NULL)",
+        (event_id,),
+    ).fetchone()[0]
+
+
 def progress(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> dict:
     require_organizer(conn, event_id, actor)
     event = get_event(conn, event_id)
@@ -398,4 +408,5 @@ def progress(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> di
         "under_target": sum(1 for r in rows if r["reviewed"] < target),
         "unassigned_projects": sum(1 for r in rows if r["assigned"] == 0),
         "idle_judges": [j for j in js if j["assigned"] > j["reviewed"]],
+        "set_aside": reviews_set_aside(conn, event_id),
     }

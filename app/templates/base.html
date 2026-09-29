@@ -35,7 +35,7 @@
 {% endif %}
 <main>
   {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
-  {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+  {% if error %}<div class="alert" role="alert">{{ error | sentence }}</div>{% endif %}
   {% block content %}{% endblock %}
 </main>
 <footer>Plumb is open source under the MIT license. Every state change is in a hash-chained audit log; published results are signed. <a href="/.well-known/plumb-key.json">Signing key</a>.</footer>

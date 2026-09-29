@@ -17,7 +17,7 @@ MIT licensed.
 |---|---|---|
 | T1, T2 | `tools/acceptance_run.py`, the published `run.py` byte for byte | [7 of 7 pass](acceptance-report.txt) |
 | T3, T4 | [`tools/acceptance_extended.py`](tools/acceptance_extended.py): the same kind of checker, for the tiers `run.py` has no checks for | [39 of 39 pass](acceptance-report-extended.txt); every verdict lists the HTTP requests it rests on |
-| All of it | 76 tests, and CI running both checkers against a real `docker compose up` on every push | [`tests/`](tests), [`ci.yml`](.github/workflows/ci.yml) |
+| All of it | 82 tests, and CI running both checkers against a real `docker compose up` on every push | [`tests/`](tests), [`ci.yml`](.github/workflows/ci.yml) |
 
 The extended checker was written by us, so it is built to be checked rather than trusted: one standard-library file you can read in ten minutes, talking to the portal only over HTTP, and relying on nothing the server says about itself (it verifies signatures with its own Ed25519, receives webhooks on its own listener, and recomputes vote seals).
 The [table below](#every-t3-and-t4-bullet-and-the-checks-that-cover-it) maps every T3 and T4 bullet from the spec to its checks.
@@ -44,7 +44,7 @@ seeded. test logins:
 Log in with any of those emails and the password `plumb-demo-2026`.
 Three events are seeded, so every stage of an event can be seen on first boot:
 
-* **Sample Hack 2026**: the fixture event, mid-judging. Submissions closed on 2026-03-01, the 126 fixture reviews are loaded, 8 projects are below the review target, a community vote is open for 14 days from boot, and pairwise judging is on. This is the event the DOGFOOD checker tests.
+* **Sample Hack 2026**: the fixture event, mid-judging. Submissions closed on 2026-03-01, the 126 fixture reviews are loaded (the 5 that score a duplicate entry are kept but left out of the ranking, so results use 121), 8 projects are below the review target, a community vote is open for 14 days from boot, and pairwise judging is on. This is the event the DOGFOOD checker tests.
 * **Sample Hack 2026 (published replay)**: the same fixture data run to the end. Prizes awarded, a closed community vote with a planted cluster of sock-puppet accounts (two already voided, three waiting for a decision), a hidden spam comment, and signed results, judge records and certificates.
 * **Plumb Demo Jam**: empty, with submissions open for 7 days, to try the participant side from scratch.
 
@@ -164,7 +164,7 @@ For a real event:
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest -q                                    # 76 tests
+python -m pytest -q                                    # 82 tests
 ruff check app tests tools                             # lint
 python tools/acceptance_run.py .dogfood.toml           # the DOGFOOD checker, against a running portal
 python tools/normalization_proof.py --draws 1000       # the proof, about 30 seconds

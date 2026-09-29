@@ -5,8 +5,17 @@
 <div class="page-head"><div>
   <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a></div>
   <h1>{% if project %}Edit {{ project.title }}{% else %}Your project{% endif %}</h1>
+  {% if phase.submissions == 'closed' %}
+  <p>Submissions closed <strong>{{ event.submissions_close | ts }}</strong>. Entries are final.</p>
+  {% else %}
   <p>Submissions close <strong>{{ event.submissions_close | ts }}</strong>. You can edit until then; after that nothing changes.</p>
+  {% endif %}
 </div></div>
+{% if phase.submissions == 'closed' and not error %}
+<div class="panel">
+  <p class="mb-0">The deadline has passed, so this entry can no longer change. {% if project %}<a href="/projects/{{ project.id }}">Back to {{ project.title }}</a>.{% endif %}</p>
+</div>
+{% else %}
 <div class="panel">
 <form class="stack" method="post" action="{% if project %}/projects/{{ project.id }}/edit{% else %}/events/{{ event.id }}/projects/new{% endif %}">{{ csrf_field() }}
   <label>Title<input type="text" name="title" value="{{ form.title or '' }}" maxlength="120" required></label>
@@ -34,4 +43,5 @@
   </div>
 </form>
 </div>
+{% endif %}
 {% endblock %}

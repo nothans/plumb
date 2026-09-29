@@ -14,7 +14,7 @@
     <tbody>{% for p in projects %}
       <tr>
         <td><a href="/projects/{{ p.id }}"><strong>{{ p.title }}</strong></a><br><span class="muted small">{{ p.team_name }}{% if p.track_name %} · {{ p.track_name }}{% endif %}</span>
-          {% if p.summary %}<br><span class="small">{{ p.summary }}</span>{% endif %}</td>
+          {% if p.summary | blurb %}<br><span class="small">{{ p.summary }}</span>{% endif %}</td>
         <td class="num">
           {% if p.team_id == own_team %}<span class="tag">Your team</span>
           {% elif p.id in votes %}

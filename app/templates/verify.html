@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head"><div>
   <h1>Verify a record</h1>
-  <p>Paste a record envelope (the JSON from a record's "Download envelope" link). This checks the signature against this portal's public key, not any key inside the envelope.</p>
+  <p>Paste a record envelope (the JSON from a record's "Download signed JSON" link). This checks the signature against this portal's public key, not any key inside the envelope.</p>
 </div></div>
 <div class="split">
   <div class="panel">
@@ -18,7 +18,7 @@
           <a href="/records/{{ b.id }}">Open the record</a></div>
         <pre class="json">{{ result.body | tojson(indent=2) }}</pre>
       {% else %}
-        <div class="alert" role="alert"><strong>Not valid.</strong> {{ result.reason | capitalize }}.</div>
+        <div class="alert" role="alert"><strong>Not valid.</strong> {{ result.reason | sentence }}</div>
       {% endif %}
     {% endif %}
     <form class="stack" method="post" action="/verify">{{ csrf_field() }}

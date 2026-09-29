@@ -73,7 +73,8 @@ def _review_page(request: Request, project_id: str, *, form=None, error=None, st
     me = domain.require_user(actor(request))
     project = domain.get_project(conn, project_id)
     domain.require_judge(conn, project["event_id"], me)
-    if not conn.execute("SELECT 1 FROM assignments WHERE judge_id = ? AND project_id = ?", (me.id, project_id)).fetchone():
+    assignment = conn.execute("SELECT source FROM assignments WHERE judge_id = ? AND project_id = ?", (me.id, project_id)).fetchone()
+    if not assignment:
         raise domain.Forbidden("this project is not assigned to you")
     event = domain.get_event(conn, project["event_id"])
     review = domain.own_review(conn, me, project_id)
@@ -81,7 +82,8 @@ def _review_page(request: Request, project_id: str, *, form=None, error=None, st
     comment = (form or {}).get("comment", review["comment"] if review else "")
     return render(request, "review_form.html", status_code=status_code, project=project, event=event,
                   phase=domain.phase(event), criteria=domain.criteria(conn, project["event_id"]), review=review,
-                  values=values, comment=comment, error=error, members=domain.team_members(conn, project["team_id"]))
+                  values=values, comment=comment, error=error, members=domain.team_members(conn, project["team_id"]),
+                  imported=assignment["source"] == "import")
 
 
 @router.get("/projects/{project_id}/review", response_class=HTMLResponse)

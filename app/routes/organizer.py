@@ -271,7 +271,7 @@ def live_results(request: Request, event_id: str):
     open_duplicates = [d for d in domain.duplicate_candidates(conn, event_id) if not d["confirmed"]]
     return render(request, "organizer/results.html", event=event, phase=domain.phase(event), res=res, fit=res["fit"],
                   pw=pw, suggestions=suggestions, leaders=domain.track_leaders(res["fit"], res["projects"]),
-                  open_duplicates=open_duplicates,
+                  open_duplicates=open_duplicates, set_aside=domain.reviews_set_aside(conn, event_id),
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
 

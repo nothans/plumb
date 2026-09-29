@@ -13,6 +13,7 @@
       <h2>Your project</h2>
       {% if project %}
         <p><a href="/projects/{{ project.id }}"><strong>{{ project.title }}</strong></a> <span class="tag {{ 'ok' if project.status == 'submitted' else 'warn' }}">{{ project.status }}</span></p>
+        {% if project.submitted_at %}<p class="small">Submitted {{ project.submitted_at | ts }}{% if phase.submissions == 'closed' %}, before the {{ event.submissions_close | ts }} close. The entry is final.{% else %}. You can edit until {{ event.submissions_close | ts }}.{% endif %}</p>{% endif %}
         {% if phase.submissions == 'open' %}<a class="btn primary" href="/projects/{{ project.id }}/edit">Edit project</a>{% endif %}
       {% elif phase.submissions == 'open' %}
         <p>Nothing yet. Start a draft; only your team sees it until you submit.</p>
@@ -22,9 +23,8 @@
       {% endif %}
     </div>
     <div class="panel">
-      <h2>Members</h2>
+      <h2>Members <span class="muted small">{{ members | length }} of at most {{ event.max_team_size }}</span></h2>
       <table><tbody>{% for m in members %}<tr><td>{{ m.name }}</td><td class="muted">{{ m.email }}</td><td class="muted small">joined {{ m.joined_at | ts }}</td></tr>{% endfor %}</tbody></table>
-      <p class="muted small mt-s">Teams are at most {{ event.max_team_size }}.</p>
     </div>
   </div>
   <aside>
@@ -36,6 +36,17 @@
       <form class="mt-s" method="post" action="/teams/{{ team.id }}/reset-invite">{{ csrf_field() }}<button type="submit">Make a new link</button></form>
       <hr class="rule">
       <form method="post" action="/teams/{{ team.id }}/leave">{{ csrf_field() }}<button class="danger" type="submit">Leave team</button></form>
+    </div>
+    {% else %}
+    <div class="panel">
+      <h2>What happens now</h2>
+      {% if phase.results_published %}
+        <p>Results are out.</p>
+        <div class="actions"><a class="btn primary" href="/events/{{ event.id }}/results">See the results</a><a class="btn" href="/events/{{ event.id }}/records">Signed records</a></div>
+      {% else %}
+        <p>{% if phase.judging_open %}Judges are reviewing the entries.{% else %}Submissions are closed.{% endif %}{% if phase.voting == 'open' %} The community vote is open too.{% endif %} Results appear on the event page once the organizers publish them, with a signed certificate for your team.</p>
+        {% if phase.voting == 'open' %}<div class="actions"><a class="btn" href="/events/{{ event.id }}/vote">Open the ballot</a></div>{% endif %}
+      {% endif %}
     </div>
     {% endif %}
   </aside>

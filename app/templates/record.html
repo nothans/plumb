@@ -8,7 +8,7 @@
     <p>{% if check.ok %}<span class="tag ok">Signature valid</span>{% else %}<span class="tag bad">{{ check.reason }}</span>{% endif %}
       Signed {{ record.issued_at | ts }} with key <code>{{ record.key_id }}</code>.</p>
   </div>
-  <div class="actions"><a class="btn" href="/records/{{ record.id }}.json">Download envelope</a></div>
+  <div class="actions"><a class="btn" href="/records/{{ record.id }}.json">Download signed JSON</a></div>
 </div>
 
 {% if record.kind == 'judge' %}

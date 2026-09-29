@@ -5,6 +5,7 @@
   <div class="stat"><div class="n">&plusmn;{{ fit.noise_sd | num }}</div><div class="l">review-to-review noise</div></div>
   <div class="stat"><div class="n">{% if fit.spread_sd < 0.5 %}not detectable{% else %}&plusmn;{{ fit.spread_sd | num }}{% endif %}</div><div class="l">true difference between projects</div></div>
 </div>
+{% if set_aside %}<p class="small muted mt-s">{{ set_aside }} more {{ 'review scores' if set_aside == 1 else 'reviews score' }} an entry dropped as a duplicate or disqualified. {{ 'It stays' if set_aside == 1 else 'They stay' }} in the exports, not in the ranking.</p>{% endif %}
 <p class="mt-m">Probabilities ("beats next", track leads, prize confidence) also account for how alike the projects are: when the true differences between projects are small next to the noise, a gap between two scores is mostly noise, so the probability stays near 50%. That is what makes them trustworthy: across simulated events, a stated 70% comes true about 70% of the time.</p>
 <p>Each review's criterion scores are combined with the rubric weights into one number from 0 to 100. Then every score is modelled as <em>project quality + judge lean + noise</em>, and each judge's lean is estimated from the projects they share with other judges. A judge who reviewed few projects is assumed to be typical unless the data says otherwise. The adjusted score is the project's quality with judge lean removed; it is not pulled toward the middle for having fewer reviews, but its interval is wider.</p>
 {% if fit.spread_sd < fit.noise_sd / 3 %}

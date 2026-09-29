@@ -151,6 +151,7 @@ def results(request: Request, event_id: str):
                       is_organizer=domain.is_organizer(conn, event_id, actor(request)))
     res = records.published_results(conn, event_id)
     return render(request, "results.html", event=event, res=res, fit=res["fit"], results_record=res["record"],
+                  set_aside=domain.reviews_set_aside(conn, event_id),
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
 

@@ -38,6 +38,11 @@ PROJECT_FROM = (
 )
 
 
+def _utc(ts: str) -> str:
+    """"2026-03-01T18:00:00Z" -> "2026-03-01 18:00 UTC", the way the pages print times."""
+    return f"{ts[:10]} {ts[11:16]} UTC" if ts else ""
+
+
 def get_project(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row:
     row = conn.execute(f"SELECT {PROJECT_COLUMNS} {PROJECT_FROM} WHERE p.id = ?", (project_id,)).fetchone()
     if row is None:
@@ -78,9 +83,9 @@ def save_project(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
         event = get_event(conn, event_id)
         state = phase(event)["submissions"]
         if state == "closed":
-            raise Conflict(f"submissions for {event['name']} closed at {event['submissions_close']}")
+            raise Conflict(f"submissions for {event['name']} closed at {_utc(event['submissions_close'])}; entries are final")
         if state == "upcoming":
-            raise Conflict(f"submissions for {event['name']} open at {event['submissions_open']}")
+            raise Conflict(f"submissions for {event['name']} open at {_utc(event['submissions_open'])}")
         team = team_for(conn, event_id, actor.id)
         if team is None:
             raise Forbidden("join or create a team for this event before submitting")

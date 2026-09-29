@@ -11,8 +11,10 @@ from urllib.parse import quote, unquote, urlparse
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from . import domain
+from .cli import DEMO_PASSWORD
 from .db import connect, now
 from .security import new_token, token_hash
 
@@ -193,8 +195,8 @@ def error_response(request: Request, exc: domain.DomainError) -> Response:
 def _fmt_ts_clean(value: str | None) -> str:
     if not value:
         return ""
-    # "2026-03-01T18:00:00Z" -> "2026-03-01 18:00 UTC"
-    return f"{value[:10]} {value[11:16]} UTC"
+    # "2026-03-01T18:00:00Z" -> "2026-03-01 18:00 UTC", kept on one line
+    return Markup('<span class="nowrap">{} {} UTC</span>').format(value[:10], value[11:16])
 
 
 def _local_input(value: str | None) -> str:
@@ -202,7 +204,28 @@ def _local_input(value: str | None) -> str:
     return value[:16] if value else ""
 
 
+# The DOGFOOD fixtures give every project the same stand-in summary. It is
+# kept in the data as given, but printing it forty times reads as an unfinished
+# page, so lists and cards skip it.
+FIXTURE_PLACEHOLDERS = {"One line of what it does."}
+
+
+def _blurb(value) -> str:
+    return "" if not value or str(value).strip() in FIXTURE_PLACEHOLDERS else value
+
+
+def _sentence(value) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    s = s[0].upper() + s[1:]
+    return s if s[-1] in ".!?" else s + "."
+
+
 templates.env.filters["ts"] = _fmt_ts_clean
+templates.env.filters["sentence"] = _sentence
+templates.env.filters["blurb"] = _blurb
+templates.env.globals["demo_password"] = DEMO_PASSWORD
 templates.env.filters["dtlocal"] = _local_input
 templates.env.filters["num"] = lambda v, d=1: "" if v is None else f"{v:.{d}f}"
 templates.env.filters["pct"] = lambda v: "" if v is None else f"{100 * v:.0f}%"

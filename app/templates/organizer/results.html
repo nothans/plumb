@@ -90,9 +90,9 @@
   <h2>Cross-checks: Bradley-Terry</h2>
   <p class="small muted">The same projects ranked two other ways. <strong>From scores</strong> turns each judge's scores into "A beat B" preferences and ignores how each judge uses the scale. <strong>Direct</strong> uses judges' head-to-head picks{% if event.pairwise %}{% else %} (pairwise judging is off for this event; turn it on in Settings){% endif %}. Agreement is Spearman's rank correlation with the ranking above (1 is identical order, 0 is unrelated).</p>
   <div class="stats">
-    <div class="stat"><div class="n">{{ pw.agree_implied | num(2) if pw.agree_implied is not none else '—' }}</div><div class="l">agreement, from scores</div></div>
+    <div class="stat"><div class="n">{{ pw.agree_implied | num(2) if pw.agree_implied is not none else 'n/a' }}</div><div class="l">agreement, from scores</div></div>
     <div class="stat"><div class="n">{{ pw.n_direct }}</div><div class="l">direct comparisons</div></div>
-    <div class="stat"><div class="n">{{ pw.agree_direct | num(2) if pw.agree_direct is not none else '—' }}</div><div class="l">agreement, direct</div></div>
+    <div class="stat"><div class="n">{{ pw.agree_direct | num(2) if pw.agree_direct is not none else 'n/a' }}</div><div class="l">agreement, direct</div></div>
   </div>
   {% if pw.direct %}
   <h3>Direct comparisons</h3>
