@@ -14,9 +14,6 @@ from .comments import (  # noqa: F401
     hide_comment,
 )
 from .core import (  # noqa: F401
-    _CONTROL,
-    _EMAIL,
-    _URL,
     Actor,
     Conflict,
     DomainError,
@@ -24,8 +21,6 @@ from .core import (  # noqa: F401
     Invalid,
     NotFound,
     Unauthorized,
-    _as_str,
-    _utcnow,
     api_tokens,
     clean_email,
     clean_text,
@@ -41,12 +36,9 @@ from .events import (  # noqa: F401
     DEFAULT_CRITERIA,
     EVENT_FIELDS,
     SCHEDULE_FIELDS,
-    _check_schedule_change,
-    _event_values,
-    _flag_value,
-    _save_prizes,
     create_event,
     criteria,
+    event_values,
     get_event,
     is_organizer,
     list_events,
@@ -64,8 +56,6 @@ from .events import (  # noqa: F401
     update_rubric,
 )
 from .exports import (  # noqa: F401
-    _cell,
-    _SafeWriter,
     audit_entries,
     results_csv,
     scores_csv,
@@ -77,7 +67,6 @@ from .hooks import (  # noqa: F401
 )
 from .judging import (  # noqa: F401
     INVITATION_DAYS,
-    _assignment_inputs,
     accept_invitation,
     assign_manual,
     auto_assign,
@@ -97,8 +86,6 @@ from .judging import (  # noqa: F401
     unassign,
 )
 from .pairwise_judging import (  # noqa: F401
-    _direct_comparisons,
-    _eligible_assigned,
     pairwise_next,
     pairwise_results,
     record_comparison,
@@ -110,6 +97,9 @@ from .projects import (  # noqa: F401
     duplicate_candidates,
     gallery,
     get_project,
+    is_live,
+    live_count,
+    live_entry,
     resolve_duplicate,
     save_project,
     set_disqualified,
@@ -123,7 +113,6 @@ from .results import (  # noqa: F401
     track_leaders,
 )
 from .teams import (  # noqa: F401
-    _can_join,
     create_team,
     join_team,
     leave_team,
@@ -133,7 +122,6 @@ from .teams import (  # noqa: F401
     team_members,
 )
 from .voting import (  # noqa: F401
-    _voter_check,
     abuse_signals,
     ballot,
     ballot_order_key,

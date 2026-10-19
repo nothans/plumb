@@ -8,14 +8,12 @@ from datetime import datetime
 
 from .. import audit
 from ..db import new_id, now, parse_ts, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from .core import (
     Actor,
     Conflict,
     Forbidden,
     Invalid,
     NotFound,
-    Unauthorized,
     _as_str,
     _utcnow,
     clean_text,
@@ -110,7 +108,7 @@ DEFAULT_CRITERIA = [
 ]
 
 
-def _event_values(form: dict, *, partial: dict | None = None) -> dict:
+def event_values(form: dict, *, partial: dict | None = None) -> dict:
     base = dict(partial or {})
     for key in EVENT_FIELDS:
         if key in form and form[key] is not None:
@@ -157,7 +155,7 @@ def create_event(conn: sqlite3.Connection, actor: Actor | None, form: dict, trac
     actor = require_user(actor)
     if not actor.is_admin:
         raise Forbidden("only admins can create events")
-    values = _event_values(form)
+    values = event_values(form)
     tracks = [clean_text(t, "track", max_len=80) for t in tracks if t and t.strip()]
     if len(set(t.lower() for t in tracks)) != len(tracks):
         raise Invalid("track names must be different from each other")
@@ -179,6 +177,11 @@ def create_event(conn: sqlite3.Connection, actor: Actor | None, form: dict, trac
         audit.append(conn, "event.created", actor_id=actor.id, event_id=eid, subject=eid,
                      detail={**values, "tracks": tracks}, ip=actor.ip)
     return eid
+
+
+def _prize_rows(conn: sqlite3.Connection, event_id: str) -> list[list]:
+    return [[r["name"], r["description"], r["track_id"]] for r in conn.execute(
+        "SELECT name, description, track_id FROM prizes WHERE event_id = ? ORDER BY position, id", (event_id,))]
 
 
 def _save_prizes(conn: sqlite3.Connection, event_id: str, prizes: list[dict]) -> None:
@@ -216,12 +219,32 @@ def _save_prizes(conn: sqlite3.Connection, event_id: str, prizes: list[dict]) ->
         conn.execute("DELETE FROM prizes WHERE id = ?", (pid,))
 
 
+TIME_FIELDS = ("submissions_open", "submissions_close", "judging_close", "voting_open", "voting_close")
+
+
+def _keep_unchanged_times(form: dict, event: sqlite3.Row) -> dict:
+    """A time sent without seconds that matches the stored time to the minute
+    means "unchanged", not "move it to :00". Browsers and many clients send
+    minute precision, and reading that as a change would shorten an open vote
+    by a few seconds (refused) or write deadline moves nobody made into the
+    audit log."""
+    form = dict(form)
+    for key in TIME_FIELDS:
+        sent, stored = form.get(key), event[key]
+        if not isinstance(sent, str) or not stored:
+            continue
+        text = sent.strip()
+        if len(text) == 16 and text.replace(" ", "T") == stored[:16]:
+            form[key] = stored
+    return form
+
+
 def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, form: dict,
                  new_tracks: list[str] | None = None, prizes: list[dict] | None = None) -> None:
     actor = require_organizer(conn, event_id, actor)
     with transaction(conn):
         event = get_event(conn, event_id)
-        values = _event_values(form, partial=dict(event))
+        values = event_values(_keep_unchanged_times(form, event), partial=dict(event))
         changed = {k: {"from": event[k], "to": v} for k, v in values.items() if event[k] != v}
         if event["results_published_at"]:
             current_prizes = [(p["name"], p["description"], p["track_id"]) for p in prizes_of(conn, event_id)]
@@ -246,11 +269,16 @@ def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
                 conn.execute("INSERT INTO tracks(id, event_id, name) VALUES (?,?,?)", (new_id("trk"), event_id, name))
                 existing.add(name.lower())
                 added.append(name)
+        prizes_changed = None
         if prizes is not None:
+            before = _prize_rows(conn, event_id)
             _save_prizes(conn, event_id, prizes)
-        if changed or added or prizes is not None:
+            after = _prize_rows(conn, event_id)
+            if before != after:
+                prizes_changed = {"from": before, "to": after}
+        if changed or added or prizes_changed:
             audit.append(conn, "event.updated", actor_id=actor.id, event_id=event_id, subject=event_id,
-                         detail={"changed": changed, "tracks_added": added, "prizes_replaced": prizes is not None},
+                         detail={"changed": changed, "tracks_added": added, "prizes": prizes_changed},
                          ip=actor.ip)
 
 

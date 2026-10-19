@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from .. import audit
 from ..db import new_id, now, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
+from ..security import new_token, token_hash
 
 
 class DomainError(Exception):

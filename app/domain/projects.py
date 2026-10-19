@@ -6,8 +6,7 @@ import sqlite3
 
 from .. import audit
 from ..db import new_id, now, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from .core import (
     Actor,
     Conflict,
     Forbidden,
@@ -16,17 +15,15 @@ from .core import (  # noqa: F401
     clean_text,
     clean_url,
 )
-from .events import (  # noqa: F401
+from .events import (
     get_event,
     is_organizer,
     phase,
     require_organizer,
     require_user,
-    tracks,
 )
-from .teams import (  # noqa: F401
+from .teams import (
     team_for,
-    team_members,
 )
 
 PROJECT_COLUMNS = (
@@ -36,6 +33,25 @@ PROJECT_FROM = (
     "FROM projects p JOIN teams t ON t.id = p.team_id JOIN events e ON e.id = p.event_id "
     "LEFT JOIN tracks tr ON tr.id = p.track_id"
 )
+
+# A live entry: submitted, not superseded by a duplicate, not disqualified.
+# Only live entries are in the gallery, the API, the widget, the counts, the
+# ballot, the judge queues, assignment and the ranking. Defined once, here,
+# for the projects table under the alias p; live_entry("x") for another alias.
+def live_entry(alias: str = "p") -> str:
+    return (f"{alias}.status = 'submitted' AND {alias}.duplicate_of IS NULL "
+            f"AND {alias}.disqualified_reason IS NULL")
+
+
+LIVE_ENTRY = live_entry("p")
+
+
+def is_live(project) -> bool:
+    return project["status"] == "submitted" and not project["duplicate_of"] and not project["disqualified_reason"]
+
+
+def live_count(conn: sqlite3.Connection, event_id: str) -> int:
+    return conn.execute(f"SELECT COUNT(*) FROM projects p WHERE p.event_id = ? AND {LIVE_ENTRY}", (event_id,)).fetchone()[0]
 
 
 def _utc(ts: str) -> str:
@@ -149,7 +165,7 @@ def unsubmit_project(conn: sqlite3.Connection, actor: Actor | None, project_id: 
 
 def gallery(conn: sqlite3.Connection, *, event_id: str | None = None, track_id: str | None = None,
             q: str | None = None, limit: int = 60, offset: int = 0) -> tuple[list[sqlite3.Row], int]:
-    where = ["p.status = 'submitted'", "p.duplicate_of IS NULL"]
+    where = [LIVE_ENTRY]
     args: list = []
     if event_id:
         where.append("p.event_id = ?")

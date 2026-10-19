@@ -23,10 +23,8 @@ def home(request: Request):
     me = actor(request)
     events = []
     for e in domain.list_events(conn):
-        count = conn.execute(
-            "SELECT COUNT(*) FROM projects WHERE event_id = ? AND status = 'submitted' AND duplicate_of IS NULL", (e["id"],)
-        ).fetchone()[0]
-        events.append({"event": e, "phase": domain.phase(e), "projects": count, "roles": domain.roles(conn, e["id"], me)})
+        events.append({"event": e, "phase": domain.phase(e), "projects": domain.live_count(conn, e["id"]),
+                       "roles": domain.roles(conn, e["id"], me)})
     return render(request, "home.html", events=events)
 
 
@@ -41,9 +39,7 @@ def event_page(request: Request, event_id: str):
         my_project = conn.execute(
             "SELECT * FROM projects WHERE team_id = ? AND duplicate_of IS NULL", (my_team["id"],)
         ).fetchone()
-    count = conn.execute(
-        "SELECT COUNT(*) FROM projects WHERE event_id = ? AND status = 'submitted' AND duplicate_of IS NULL", (event_id,)
-    ).fetchone()[0]
+    count = domain.live_count(conn, event_id)
     winners = {r["prize_id"]: r for r in conn.execute(
         "SELECT a.prize_id, p.id, p.title FROM awards a JOIN projects p ON p.id = a.project_id WHERE a.event_id = ?",
         (event_id,))}

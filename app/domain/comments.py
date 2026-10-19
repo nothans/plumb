@@ -6,19 +6,18 @@ import sqlite3
 
 from .. import audit
 from ..db import new_id, now, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from .core import (
     Actor,
     Conflict,
     NotFound,
     clean_text,
 )
-from .events import (  # noqa: F401
+from .events import (
     is_organizer,
     require_organizer,
     require_user,
 )
-from .projects import (  # noqa: F401
+from .projects import (
     get_project,
     view_project,
 )

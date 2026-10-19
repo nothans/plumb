@@ -165,8 +165,10 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
         by_project = {p.project: p for p in fit.projects}
         team_records = 0
         for t in conn.execute("SELECT * FROM teams WHERE event_id = ? ORDER BY id", (event_id,)).fetchall():
+            # A team whose entry was disqualified gets no certificate: one
+            # would read as a clean participation it was not.
             proj = conn.execute(
-                "SELECT * FROM projects WHERE team_id = ? AND duplicate_of IS NULL AND status = 'submitted'", (t["id"],)
+                f"SELECT p.* FROM projects p WHERE p.team_id = ? AND {domain.live_entry('p')}", (t["id"],)
             ).fetchone()
             if proj is None:
                 continue
@@ -262,7 +264,6 @@ def check_envelope(env: dict, signer: Signer) -> dict:
         return {"ok": False, "reason": f"signed by key {env['key_id']}, but this portal's key is {signer.key_id}"}
     if not verify(payload, signature, signer.public_key_b64):
         return {"ok": False, "reason": "the signature does not match the payload; it was altered or not issued here"}
-    import json
     try:
         body = json.loads(payload)
     except ValueError:

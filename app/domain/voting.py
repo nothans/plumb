@@ -6,8 +6,8 @@ import sqlite3
 
 from .. import audit
 from ..db import now, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from ..security import new_token
+from .core import (
     Actor,
     Conflict,
     Forbidden,
@@ -15,25 +15,23 @@ from .core import (  # noqa: F401
     NotFound,
     clean_text,
 )
-from .events import (  # noqa: F401
+from .events import (
     get_event,
     phase,
     require_organizer,
     require_user,
     roles,
 )
-from .judging import (  # noqa: F401
-    judges,
-)
-from .projects import (  # noqa: F401
+from .projects import (
     PROJECT_COLUMNS,
     PROJECT_FROM,
     gallery,
     get_project,
+    is_live,
+    live_entry,
 )
-from .teams import (  # noqa: F401
+from .teams import (
     team_for,
-    team_members,
 )
 
 
@@ -63,7 +61,6 @@ def ballot(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> dict
         raise Conflict("voting is not open")
     _voter_check(conn, event, actor)
     rows, _ = gallery(conn, event_id=event_id, limit=10000)
-    rows = [r for r in rows if not r["disqualified_reason"]]
     rows.sort(key=lambda r: ballot_order_key(actor.id, event_id, r["id"]))
     mine = {r["project_id"] for r in conn.execute(
         "SELECT project_id FROM votes WHERE event_id = ? AND voter_id = ?", (event_id, actor.id)
@@ -81,7 +78,7 @@ def cast_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str) ->
         if phase(event)["voting"] != "open":
             raise Conflict("voting is not open")
         _voter_check(conn, event, actor)
-        if project["status"] != "submitted" or project["duplicate_of"] or project["disqualified_reason"]:
+        if not is_live(project):
             raise Invalid("this project is not on the ballot")
         if conn.execute("SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?", (project["team_id"], actor.id)).fetchone():
             raise Forbidden("you cannot vote for your own team")
@@ -142,7 +139,7 @@ def vote_tallies(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -
     return conn.execute(
         f"SELECT {PROJECT_COLUMNS}, COUNT(v.voter_id) AS votes {PROJECT_FROM} "
         "LEFT JOIN votes v ON v.project_id = p.id "
-        "WHERE p.event_id = ? AND p.status = 'submitted' AND p.duplicate_of IS NULL AND p.disqualified_reason IS NULL "
+        f"WHERE p.event_id = ? AND {live_entry('p')} "
         "GROUP BY p.id ORDER BY votes DESC, p.id",
         (event_id,),
     ).fetchall()

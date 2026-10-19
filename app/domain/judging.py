@@ -7,8 +7,8 @@ from datetime import timedelta
 
 from .. import assign, audit
 from ..db import new_id, now, parse_ts, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from ..security import new_token, token_hash
+from .core import (
     Actor,
     Conflict,
     Forbidden,
@@ -19,7 +19,7 @@ from .core import (  # noqa: F401
     clean_text,
     user_by_email,
 )
-from .events import (  # noqa: F401
+from .events import (
     criteria,
     get_event,
     is_organizer,
@@ -30,14 +30,14 @@ from .events import (  # noqa: F401
     roles,
     tracks,
 )
-from .projects import (  # noqa: F401
+from .projects import (
     PROJECT_COLUMNS,
     PROJECT_FROM,
     get_project,
+    live_entry,
 )
-from .teams import (  # noqa: F401
+from .teams import (
     team_for,
-    team_members,
 )
 
 
@@ -173,8 +173,7 @@ def _assignment_inputs(conn: sqlite3.Connection, event_id: str):
     ps = [
         assign.ProjectInfo(id=p["id"], track=p["track_id"], member_emails=frozenset(members.get(p["team_id"], set())))
         for p in conn.execute(
-            "SELECT id, track_id, team_id FROM projects WHERE event_id = ? AND status = 'submitted' "
-            "AND duplicate_of IS NULL AND disqualified_reason IS NULL", (event_id,)
+            f"SELECT p.id, p.track_id, p.team_id FROM projects p WHERE p.event_id = ? AND {live_entry('p')}", (event_id,)
         )
     ]
     existing = {(r["judge_id"], r["project_id"]) for r in conn.execute(
@@ -244,8 +243,7 @@ def judge_queue(conn: sqlite3.Connection, actor: Actor | None, event_id: str) ->
         f"SELECT {PROJECT_COLUMNS}, v.id AS review_id, v.updated_at AS reviewed_at, a.source "
         f"{PROJECT_FROM} JOIN assignments a ON a.project_id = p.id "
         "LEFT JOIN reviews v ON v.project_id = p.id AND v.judge_id = a.judge_id "
-        "WHERE a.event_id = ? AND a.judge_id = ? AND p.status = 'submitted' AND p.duplicate_of IS NULL "
-        "AND p.disqualified_reason IS NULL ORDER BY (v.id IS NOT NULL), p.title",
+        f"WHERE a.event_id = ? AND a.judge_id = ? AND {live_entry('p')} ORDER BY (v.id IS NOT NULL), p.title",
         (event_id, actor.id),
     ).fetchall()
 
@@ -392,8 +390,8 @@ def progress(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> di
         "SELECT p.id, p.title, p.track_id, t.name AS team_name, "
         " (SELECT COUNT(*) FROM assignments a WHERE a.project_id = p.id) AS assigned, "
         " (SELECT COUNT(*) FROM reviews v WHERE v.project_id = p.id) AS reviewed "
-        "FROM projects p JOIN teams t ON t.id = p.team_id WHERE p.event_id = ? AND p.status = 'submitted' "
-        "AND p.duplicate_of IS NULL AND p.disqualified_reason IS NULL ORDER BY reviewed, p.id",
+        f"FROM projects p JOIN teams t ON t.id = p.team_id WHERE p.event_id = ? AND {live_entry('p')} "
+        "ORDER BY reviewed, p.id",
         (event_id,),
     ).fetchall()
     js = judges(conn, event_id)

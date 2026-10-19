@@ -109,7 +109,7 @@ def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, 
     with transaction(conn):
         if conn.execute("SELECT 1 FROM events WHERE id = ?", (eid,)).fetchone():
             raise domain.Conflict(f"an event with id {eid} already exists")
-        values = domain._event_values({
+        values = domain.event_values({
             "name": name,
             "tagline": pev.get("tagline", ""),
             "description": pev.get("description", ""),

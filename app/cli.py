@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import random
 import sqlite3
 import sys
 from datetime import timedelta
@@ -151,7 +152,7 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
         domain.resolve_duplicate(conn, org, dup["duplicate_of"], dup["id"])
 
     # Community: honest voters (accounts older than the vote), then the sock puppets.
-    rng = __import__("random").Random(2026)
+    rng = random.Random(2026)
     pw = hash_password(DEMO_PASSWORD)
     honest = []
     for i, name in enumerate(DEMO_VOTERS):

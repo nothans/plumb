@@ -6,29 +6,27 @@ import sqlite3
 
 from .. import audit, normalize, pairwise
 from ..db import now, transaction
-from ..security import new_token, token_hash  # noqa: F401  (new_token also seals votes)
-from .core import (  # noqa: F401
+from .core import (
     Actor,
     Conflict,
     Forbidden,
     Invalid,
 )
-from .events import (  # noqa: F401
-    criteria,
+from .events import (
     get_event,
     phase,
     require_judge,
     require_user,
     roles,
 )
-from .judging import (  # noqa: F401
-    judges,
+from .judging import (
     reviews_for,
 )
-from .projects import (  # noqa: F401
+from .projects import (
     get_project,
+    live_entry,
 )
-from .results import (  # noqa: F401
+from .results import (
     results_for_viewer,
 )
 
@@ -36,7 +34,7 @@ from .results import (  # noqa: F401
 def _eligible_assigned(conn: sqlite3.Connection, event_id: str, judge_id: str) -> list[str]:
     return [r["id"] for r in conn.execute(
         "SELECT p.id FROM assignments a JOIN projects p ON p.id = a.project_id WHERE a.event_id = ? AND a.judge_id = ? "
-        "AND p.status = 'submitted' AND p.duplicate_of IS NULL AND p.disqualified_reason IS NULL ORDER BY p.id",
+        f"AND {live_entry('p')} ORDER BY p.id",
         (event_id, judge_id),
     )]
 
@@ -45,9 +43,7 @@ def _direct_comparisons(conn: sqlite3.Connection, event_id: str) -> list[pairwis
     out = []
     for r in conn.execute(
         "SELECT c.* FROM comparisons c JOIN projects a ON a.id = c.project_a JOIN projects b ON b.id = c.project_b "
-        "WHERE c.event_id = ? AND a.duplicate_of IS NULL AND b.duplicate_of IS NULL "
-        "AND a.status = 'submitted' AND b.status = 'submitted' "
-        "AND a.disqualified_reason IS NULL AND b.disqualified_reason IS NULL", (event_id,)
+        f"WHERE c.event_id = ? AND {live_entry('a')} AND {live_entry('b')}", (event_id,)
     ):
         loser = r["project_b"] if r["winner"] == r["project_a"] else r["project_a"]
         out.append(pairwise.Comparison(r["winner"], loser))

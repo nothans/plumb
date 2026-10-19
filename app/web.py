@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hmac
 import sqlite3
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
@@ -22,7 +23,7 @@ SESSION_COOKIE = "plumb_session"
 ANON_CSRF_COOKIE = "plumb_csrf"
 FLASH_COOKIE = "plumb_flash"
 
-templates = Jinja2Templates(directory=str(__import__("pathlib").Path(__file__).with_name("templates")))
+templates = Jinja2Templates(directory=str(Path(__file__).with_name("templates")))
 
 
 def conn_for(request: Request) -> sqlite3.Connection:
@@ -200,8 +201,9 @@ def _fmt_ts_clean(value: str | None) -> str:
 
 
 def _local_input(value: str | None) -> str:
-    """ISO UTC -> the value an <input type=datetime-local> expects."""
-    return value[:16] if value else ""
+    """ISO UTC -> the value an <input type=datetime-local step=1> expects,
+    seconds included, so that saving an untouched form changes nothing."""
+    return value[:19] if value else ""
 
 
 # The DOGFOOD fixtures give every project the same stand-in summary. It is

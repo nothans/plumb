@@ -13,9 +13,9 @@
   <fieldset>
     <legend>Schedule (UTC)</legend>
     <div class="row">
-      <label>Submissions open<input type="datetime-local" name="submissions_open" value="{{ form.submissions_open | dtlocal }}" required></label>
-      <label>Submissions close<input type="datetime-local" name="submissions_close" value="{{ form.submissions_close | dtlocal }}" required></label>
-      <label>Judging closes <span class="hint">Optional. Otherwise judging runs until results are published.</span><input type="datetime-local" name="judging_close" value="{{ form.judging_close | dtlocal }}"></label>
+      <label>Submissions open<input type="datetime-local" step="1" name="submissions_open" value="{{ form.submissions_open | dtlocal }}" required></label>
+      <label>Submissions close<input type="datetime-local" step="1" name="submissions_close" value="{{ form.submissions_close | dtlocal }}" required></label>
+      <label>Judging closes <span class="hint">Optional. Otherwise judging runs until results are published.</span><input type="datetime-local" step="1" name="judging_close" value="{{ form.judging_close | dtlocal }}"></label>
     </div>
     <p class="muted small mt-s">Moving a deadline is allowed and recorded in the audit log with the old and new values.</p>
   </fieldset>
@@ -29,8 +29,8 @@
           <option value="participants" {% if form.voting_mode == 'participants' %}selected{% endif %}>Participants of this event only</option>
         </select>
       </label>
-      <label>Voting opens<input type="datetime-local" name="voting_open" value="{{ form.voting_open | dtlocal }}"></label>
-      <label>Voting closes<input type="datetime-local" name="voting_close" value="{{ form.voting_close | dtlocal }}"></label>
+      <label>Voting opens<input type="datetime-local" step="1" name="voting_open" value="{{ form.voting_open | dtlocal }}"></label>
+      <label>Voting closes<input type="datetime-local" step="1" name="voting_close" value="{{ form.voting_close | dtlocal }}"></label>
       <label>Votes per voter<input type="number" name="votes_per_voter" min="1" max="50" value="{{ form.votes_per_voter or 3 }}"></label>
     </div>
   </fieldset>
