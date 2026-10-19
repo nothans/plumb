@@ -19,7 +19,8 @@ class TooMany(domain.DomainError):
 
 
 class RateLimiter:
-    def __init__(self) -> None:
+    def __init__(self, limits: dict[str, tuple[int, float]] | None = None) -> None:
+        self.limits = dict(limits or DEFAULT_LIMITS)
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
         self.refused: dict[str, int] = defaultdict(int)
@@ -36,17 +37,46 @@ class RateLimiter:
             q.append(now)
 
 
-LIMITS = {
+# (attempts, window in seconds). The per-email login limit is the guessing
+# defence; the per-address limits only stop one machine spraying, and are set
+# well above a whole event's size, because a venue NAT or a reverse proxy
+# missing from FORWARDED_ALLOW_IPS makes every participant one address.
+DEFAULT_LIMITS = {
     "login": (10, 300.0),         # per email: guessing one password
-    "login-ip": (60, 300.0),      # per address: spraying many accounts
-    "signup": (30, 3600.0),       # per address; generous, since a venue shares one NAT
+    "login-ip": (600, 300.0),     # per address: spraying many accounts
+    "signup": (300, 3600.0),      # per address
     "vote": (30, 60.0),           # per account
     "comment": (10, 300.0),       # per account
 }
 
 
+def parse_limits(spec: str | None) -> dict[str, tuple[int, float]]:
+    """PLUMB_RATE_LIMITS, e.g. "signup=1000/3600,login-ip=2000/300": attempts
+    per window in seconds, overriding the defaults for the buckets named."""
+    limits = dict(DEFAULT_LIMITS)
+    for part in (spec or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            name, value = part.split("=", 1)
+            attempts, window = value.split("/", 1)
+            name, attempts_n, window_s = name.strip(), int(attempts), float(window)
+        except ValueError as exc:
+            raise ValueError(f"PLUMB_RATE_LIMITS: cannot read {part!r}; write bucket=attempts/seconds") from exc
+        if name not in DEFAULT_LIMITS:
+            raise ValueError(f"PLUMB_RATE_LIMITS: unknown bucket {name!r}; known: {', '.join(DEFAULT_LIMITS)}")
+        if attempts_n < 1 or window_s <= 0:
+            raise ValueError(f"PLUMB_RATE_LIMITS: {name} needs at least one attempt in a positive window")
+        limits[name] = (attempts_n, window_s)
+    return limits
+
+
+LIMITS = dict(DEFAULT_LIMITS)
+
+
 def check(limiter: RateLimiter, bucket: str, *keys: str | None) -> None:
-    limit, window = LIMITS[bucket]
+    limit, window = limiter.limits.get(bucket, LIMITS[bucket])
     for key in keys:
         if key:
             limiter.hit(bucket, key, limit, window)

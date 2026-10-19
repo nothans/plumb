@@ -6,6 +6,7 @@ demo mode) the seeded fixture event with ready-made logins.
     python -m app.cli verify-audit     # recompute the audit hash chain
     python -m app.cli backup PATH      # consistent copy of the database, safe while running
     python -m app.cli set-password EMAIL   # reset a forgotten password (prompts), ends their sessions
+    python -m app.cli retire-demo      # keep a demo-seeded database's data, end every public demo login
 """
 
 from __future__ import annotations
@@ -233,22 +234,84 @@ def ensure_demo_sessions(conn) -> dict[str, tuple[str, str]]:
     return sessions
 
 
+def _meta(conn, key: str) -> bool:
+    return conn.execute("SELECT 1 FROM meta WHERE key = ?", (key,)).fetchone() is not None
+
+
+def demo_tokens() -> set[str]:
+    return {token for token, _ in DEMO_SESSIONS.values()}
+
+
+def retire_demo(conn) -> dict:
+    """Make a demo-seeded database safe to run privately, keeping its data.
+
+    The demo's logins are public: the fixed session cookies are committed in
+    .dogfood.toml and the shared password is printed on every boot. This ends
+    those sessions, removes the shared password from every account that still
+    has it (those accounts can be reclaimed through an invitation or
+    set-password), revokes their API tokens, and takes admin rights away from
+    the demo admin. Events, entries, reviews, votes, records and the audit
+    log are untouched.
+    """
+    from .security import verify_password
+    if not _meta(conn, "demo_seeded"):
+        raise SystemExit("plumb: this database was never seeded in demo mode; nothing to retire")
+    with transaction(conn):
+        sessions = 0
+        for token in demo_tokens():
+            sessions += conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash(token),)).rowcount
+        locked = 0
+        for user in conn.execute("SELECT id, password_hash FROM users WHERE password_hash IS NOT NULL").fetchall():
+            if verify_password(DEMO_PASSWORD, user["password_hash"]):
+                conn.execute("UPDATE users SET password_hash = NULL WHERE id = ?", (user["id"],))
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+                conn.execute("DELETE FROM api_tokens WHERE user_id = ?", (user["id"],))
+                locked += 1
+        demoted = conn.execute("UPDATE users SET is_admin = 0 WHERE email = ?", (DEMO_ADMIN,)).rowcount
+        conn.execute("INSERT INTO meta(key, value) VALUES ('demo_retired', ?) ON CONFLICT(key) DO NOTHING", (now(),))
+        detail = {"sessions_ended": sessions, "accounts_locked": locked, "admins_demoted": demoted}
+        audit.append(conn, "demo.retired", actor_id=None, subject="demo", detail=detail)
+    return detail
+
+
 def bootstrap(settings: Settings, out=sys.stdout) -> None:
     conn = connect(settings.database_path)
     init_schema(conn)
     signer = Signer.load_or_create(settings.signing_key_path)
-    if settings.admin_email and settings.admin_password and not domain.user_by_email(conn, settings.admin_email):
-        domain.create_user(conn, settings.admin_email, "Admin", hash_password(settings.admin_password), is_admin=True)
-        print(f"created admin {settings.admin_email}", file=out)
-    print(f"plumb: database {settings.database_path}", file=out)
-    print(f"plumb: signing key {signer.key_id}", file=out)
-    demo_db = conn.execute("SELECT 1 FROM meta WHERE key = 'demo_seeded'").fetchone() is not None
+    retired = _meta(conn, "demo_retired")
+    demo_db = _meta(conn, "demo_seeded") and not retired
+    if settings.demo and not demo_db:
+        # Demo mode creates an admin and sessions whose cookies are published
+        # in .dogfood.toml. It may only ever do that to a database that holds
+        # nothing: a volume with real accounts or events stays private even
+        # when a deployment comes up with the demo compose file by mistake.
+        users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        if users or events or retired:
+            conn.close()
+            raise SystemExit(
+                f"plumb: PLUMB_DEMO=1, but this database already holds {users} accounts and {events} events "
+                "that the demo did not make.\n"
+                "plumb: refusing to seed public demo logins into it. Nothing was changed.\n"
+                "plumb: for a real event, start with PLUMB_DEMO=0 (compose.prod.yml does); "
+                "for the demo, use a fresh, empty volume.")
     if demo_db and not settings.demo:
         conn.close()
         raise SystemExit(
-            "plumb: this database was seeded in demo mode, and its logins and sessions are public.\n"
-            "plumb: refusing to start with PLUMB_DEMO=0. Start from an empty volume "
-            "(docker compose down -v, then up), or keep PLUMB_DEMO=1 for the demo.")
+            "plumb: this database was seeded in demo mode, and its demo logins and sessions are public.\n"
+            "plumb: refusing to start with PLUMB_DEMO=0. Nothing was changed.\n"
+            "plumb: if it holds only the demo, start from a fresh, empty volume instead.\n"
+            "plumb: if you ran a real event on it, keep it: back it up (python -m app.cli backup PATH), then run "
+            "python -m app.cli retire-demo, which removes every public login and keeps all the data.")
+    if settings.admin_email and settings.admin_password and not domain.user_by_email(conn, settings.admin_email):
+        if settings.demo:
+            print("plumb: ignoring PLUMB_ADMIN_EMAIL in demo mode; the demo has its own admin", file=out)
+        else:
+            domain.create_user(conn, settings.admin_email, "Admin", hash_password(settings.admin_password),
+                               is_admin=True)
+            print(f"created admin {settings.admin_email}", file=out)
+    print(f"plumb: database {settings.database_path}", file=out)
+    print(f"plumb: signing key {signer.key_id}", file=out)
     if settings.demo:
         seed_demo(conn, settings)
         sessions = ensure_demo_sessions(conn)
@@ -294,6 +357,11 @@ def main(argv: list[str]) -> int:
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
             audit.append(conn, "user.password_reset", actor_id=None, subject=user["id"], detail={"via": "cli"})
         print("password set; existing sessions ended")
+        return 0
+    if argv[0] == "retire-demo" and len(argv) == 1:
+        conn = connect(settings.database_path)
+        init_schema(conn)
+        print(json.dumps(retire_demo(conn)))
         return 0
     if argv[0] == "backup" and len(argv) == 2:
         src = connect(settings.database_path)

@@ -51,8 +51,15 @@ def _allow_private() -> bool:
 
 def _allowed_hosts() -> set[str]:
     """PLUMB_WEBHOOKS_ALLOW_HOSTS: exact hostnames exempt from the address
-    check, for a known receiver on a private network (the demo compose file
-    names host.docker.internal so the extended checker can receive)."""
+    check, so the extended checker can receive on the demo's Docker host.
+
+    Honoured in demo mode only. Webhooks are an organizer power, and an
+    organizer is an event-level role, so on a real instance a host exemption
+    left over from the demo would let any organizer make the container POST
+    to services on its host. A real instance that needs a LAN receiver sets
+    PLUMB_WEBHOOKS_ALLOW_PRIVATE=1 on purpose."""
+    if os.environ.get("PLUMB_DEMO", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return set()
     return {h.strip().lower() for h in os.environ.get("PLUMB_WEBHOOKS_ALLOW_HOSTS", "").split(",") if h.strip()}
 
 

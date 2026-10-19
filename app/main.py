@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import __version__, domain, web, webhooks
 from .config import Settings, load_settings
 from .db import connect, init_schema
-from .ratelimit import RateLimiter
+from .ratelimit import RateLimiter, parse_limits
 from .routes import account, api, judging, organizer, public, teams
 from .signing import Signer
 
@@ -50,7 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.signer = Signer.load_or_create(settings.signing_key_path)
-    app.state.limiter = RateLimiter()
+    app.state.limiter = RateLimiter(parse_limits(settings.rate_limits))
     web._secure_cookies = settings.secure_cookies
 
     @app.middleware("http")

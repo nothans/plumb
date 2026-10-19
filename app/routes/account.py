@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from .. import audit, domain, ratelimit
+from ..cli import demo_tokens
 from ..db import now, parse_ts, to_ts, transaction
 from ..security import hash_password, new_token, token_hash, verify_password
 from ..web import SESSION_COOKIE, actor, body, client_ip, conn_for, redirect, render
@@ -82,7 +83,10 @@ async def signup(request: Request):
 async def logout(request: Request):
     await body(request)
     token = request.cookies.get(SESSION_COOKIE)
-    if token:
+    # The demo's fixed sessions are shared by everyone holding .dogfood.toml;
+    # one visitor logging out must not break them for the checker and the
+    # other judges. Their cookie is cleared, the shared session stays.
+    if token and not (request.app.state.settings.demo and token in demo_tokens()):
         conn = conn_for(request)
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash(token),))
     response = redirect("/", "Logged out.")

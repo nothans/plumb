@@ -22,6 +22,7 @@ class Settings:
     admin_email: str | None
     admin_password: str | None
     webhooks: bool = True
+    rate_limits: str = ""
 
     @property
     def database_path(self) -> Path:
@@ -43,4 +44,5 @@ def load_settings() -> Settings:
         admin_email=os.environ.get("PLUMB_ADMIN_EMAIL") or None,
         admin_password=os.environ.get("PLUMB_ADMIN_PASSWORD") or None,
         webhooks=_flag("PLUMB_WEBHOOKS", True),
+        rate_limits=os.environ.get("PLUMB_RATE_LIMITS", ""),
     )

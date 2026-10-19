@@ -1,0 +1,33 @@
+# A real event: docker compose -f compose.prod.yml up -d
+#
+# Production settings live here and in .env (copy .env.example), never in
+# docker-compose.yml, which is the demo. The two use different volumes, so
+# "docker compose down -v" on the demo can never touch this one, and a pull
+# that changes the demo file can never flip a real instance into demo mode.
+# (Demo mode also refuses to seed any database that already holds data.)
+services:
+  plumb:
+    build: .
+    image: plumb:local
+    ports:
+      - "${PLUMB_PORT:-8080}:8080"
+    environment:
+      PLUMB_DEMO: "0"
+      # The public address: written into invitation links and signed into every record.
+      PLUMB_BASE_URL: "${PLUMB_BASE_URL:?set PLUMB_BASE_URL in .env (see .env.example)}"
+      # Behind a TLS reverse proxy (the expected setup). Set to 0 only for a plain-HTTP test.
+      PLUMB_SECURE_COOKIES: "${PLUMB_SECURE_COOKIES:-1}"
+      # The first admin, created on first boot if the address has no account yet.
+      PLUMB_ADMIN_EMAIL: "${PLUMB_ADMIN_EMAIL:-}"
+      PLUMB_ADMIN_PASSWORD: "${PLUMB_ADMIN_PASSWORD:-}"
+      # The reverse proxy's address, so client addresses (rate limits, audit) are real.
+      # Never "*": any client could then pick its own address. See README "Run a real event".
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+      # Rate limits, if a venue shares one address (README "Run a real event").
+      PLUMB_RATE_LIMITS: "${PLUMB_RATE_LIMITS:-}"
+    volumes:
+      - plumb-prod-data:/data
+    restart: unless-stopped
+
+volumes:
+  plumb-prod-data:
