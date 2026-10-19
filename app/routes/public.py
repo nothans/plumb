@@ -47,7 +47,7 @@ def event_page(request: Request, event_id: str):
         request, "event.html", event=event, phase=domain.phase(event), tracks=domain.tracks(conn, event_id), winners=winners,
         prizes=domain.prizes(conn, event_id), roles=domain.roles(conn, event_id, me), my_team=my_team,
         my_project=my_project, project_count=count, criteria=domain.criteria(conn, event_id),
-        turnout=domain.turnout(conn, event_id),
+        turnout=domain.turnout(conn, event_id), vote_refusal=domain.vote_refusal(conn, event, me),
     )
 
 
@@ -131,8 +131,11 @@ async def vote(request: Request, project_id: str):
 def vote_results(request: Request, event_id: str):
     conn = conn_for(request)
     event = domain.get_event(conn, event_id)
-    return render(request, "votes.html", event=event, tallies=domain.vote_tallies(conn, actor(request), event_id),
-                  turnout=domain.turnout(conn, event_id))
+    tallies = domain.vote_tallies(conn, actor(request), event_id)
+    log = domain.vote_log(conn, event_id)
+    voided = sum(e["detail"].get("removed") or 0 for e in log["entries"] if e["action"] == "votes.voided")
+    return render(request, "votes.html", event=event, tallies=tallies, turnout=domain.turnout(conn, event_id),
+                  voided=voided, published=bool(event["results_published_at"]))
 
 
 # --- results and records -----------------------------------------------------------

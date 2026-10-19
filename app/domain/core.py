@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from .. import audit
-from ..db import new_id, now, transaction
+from ..db import new_id, now, transaction, utcnow
 from ..security import new_token, token_hash
 
 
@@ -50,7 +50,7 @@ class Actor:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(UTC)
+    return utcnow()
 
 
 # --- small validators --------------------------------------------------------

@@ -449,6 +449,14 @@ def vote_reveal(request: Request, event_id: str):
     return domain.vote_reveal(conn_for(request), actor(request), event_id)
 
 
+@v1.get("/events/{event_id}/votes/log")
+def vote_log(request: Request, event_id: str):
+    """After voting closes, public: the vote entries of the audit log (seals, withdrawals, voids with
+    their reasons, never a voter) and the revealed votes. Counted = cast - withdrawn - voided seals;
+    every revealed vote's sha256(nonce:project) must be a counted seal."""
+    return domain.vote_log(conn_for(request), event_id)
+
+
 @v1.get("/events/{event_id}/votes")
 def tallies(request: Request, event_id: str):
     conn = conn_for(request)
@@ -730,7 +738,7 @@ DESCRIPTIONS = {
     "duplicates": "Pairs of submissions that share a team, repository or title (organizers).",
     "resolve_duplicate": "Choose which of a duplicate pair counts (organizers, before publication).",
     "disqualify": "Disqualify with a reason, or reinstate with a null reason (organizers, before publication).",
-    "void_votes": "Remove every vote of one account, with a reason (organizers).",
+    "void_votes": "Remove every vote of one account, with a reason (organizers, until results are published).",
     "abuse": "Voting patterns worth a human look (organizers).",
     "audit_log": "The event's audit entries, newest first, with a chain verification result (organizers).",
     "delete_webhook": "Remove a webhook (organizers).",

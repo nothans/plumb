@@ -44,6 +44,9 @@ def _can_join(conn: sqlite3.Connection, event: sqlite3.Row, actor: Actor) -> Non
         "SELECT 1 FROM event_roles WHERE event_id = ? AND user_id = ?", (event["id"], actor.id)
     ).fetchone():
         raise Forbidden("judges and organizers of an event cannot also compete in it")
+    if actor.is_admin:
+        # Admins can read every event's live results and reviews.
+        raise Forbidden("admins oversee every event, so they cannot compete; use an account without admin rights")
 
 
 def create_team(conn: sqlite3.Connection, actor: Actor | None, event_id: str, name: str) -> str:

@@ -108,7 +108,10 @@ DEFAULT_CRITERIA = [
 ]
 
 
-def event_values(form: dict, *, partial: dict | None = None) -> dict:
+def event_values(form: dict, *, partial: dict | None = None, check: bool = True) -> dict:
+    """Clean every event field, then (unless check=False) the rules between
+    fields. update_event checks the rules itself, after deciding whether the
+    change is allowed at all, so a frozen event says "frozen" first."""
     base = dict(partial or {})
     for key in EVENT_FIELDS:
         if key in form and form[key] is not None:
@@ -138,6 +141,12 @@ def event_values(form: dict, *, partial: dict | None = None) -> dict:
             raise Invalid(f"{key.replace('_', ' ')} must be between {lo} and {hi}")
         out[key] = value
     out["pairwise"] = _flag_value(base.get("pairwise", 0))
+    if check:
+        check_event_values(out)
+    return out
+
+
+def check_event_values(out: dict) -> None:
     if out["submissions_open"] >= out["submissions_close"]:
         raise Invalid("submissions must open before they close")
     if out["judging_close"] and out["judging_close"] <= out["submissions_close"]:
@@ -147,7 +156,11 @@ def event_values(form: dict, *, partial: dict | None = None) -> dict:
             raise Invalid("voting needs an opening and a closing time")
         if out["voting_open"] >= out["voting_close"]:
             raise Invalid("voting must open before it closes")
-    return out
+        # While submissions are open, teams can still form, split and rejoin,
+        # so "no voting for your own team" could be walked around by leaving,
+        # voting and coming back. The vote starts when the teams are final.
+        if out["voting_open"] < out["submissions_close"]:
+            raise Invalid("voting can open only once submissions have closed, when the teams are final")
 
 
 def create_event(conn: sqlite3.Connection, actor: Actor | None, form: dict, tracks: list[str], prizes: list[dict],
@@ -244,7 +257,7 @@ def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
     actor = require_organizer(conn, event_id, actor)
     with transaction(conn):
         event = get_event(conn, event_id)
-        values = event_values(_keep_unchanged_times(form, event), partial=dict(event))
+        values = event_values(_keep_unchanged_times(form, event), partial=dict(event), check=False)
         changed = {k: {"from": event[k], "to": v} for k, v in values.items() if event[k] != v}
         if event["results_published_at"]:
             current_prizes = [(p["name"], p["description"], p["track_id"]) for p in prizes_of(conn, event_id)]
@@ -256,6 +269,7 @@ def update_event(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
                 raise Conflict("results are published; only the tagline and description can still change")
             prizes = None
         _check_schedule_change(conn, event, changed)
+        check_event_values(values)
         if changed:
             conn.execute(
                 f"UPDATE events SET {', '.join(f'{k} = ?' for k in values)} WHERE id = ?",

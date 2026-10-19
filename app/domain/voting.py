@@ -1,7 +1,18 @@
-"""The community vote and its abuse signals."""
+"""The community vote and its abuse signals.
+
+Secrecy: while the vote is open, the audit log holds each vote only as a
+seal, sha256(nonce:project), with no voter and no address, so neither the
+log, its webhook stream, nor an organizer can say who voted for what. At the
+close the nonces are revealed (still without voters), and anyone can check
+every counted vote against the sealed log. The link from a voter to their
+votes lives only in the votes table, for abuse review, and no page or
+endpoint shows it together with the projects.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 
 from .. import audit
@@ -36,16 +47,35 @@ from .teams import (
 
 
 def ballot_order_key(voter_id: str, event_id: str, project_id: str) -> str:
-    import hashlib
     return hashlib.sha256(f"{event_id}|{voter_id}|{project_id}".encode()).hexdigest()
 
 
 def _voter_check(conn: sqlite3.Connection, event: sqlite3.Row, actor: Actor) -> None:
-    mode = event["voting_mode"]
-    if mode == "participants" and not team_for(conn, event["id"], actor.id):
-        raise Forbidden("only participants of this event can vote")
-    if "judge" in roles(conn, event["id"], actor):
+    held = roles(conn, event["id"], actor)
+    if "judge" in held:
         raise Forbidden("judges do not vote in the community ballot")
+    if held & {"organizer", "admin"}:
+        raise Forbidden("organizers and admins run the vote, so they do not vote in it")
+    if event["voting_mode"] == "participants":
+        # A participant is someone whose team has a live entry, not anyone
+        # who made an empty team to get a ballot.
+        team = team_for(conn, event["id"], actor.id)
+        if team is None or not conn.execute(
+            f"SELECT 1 FROM projects p WHERE p.team_id = ? AND {live_entry('p')}", (team["id"],)
+        ).fetchone():
+            raise Forbidden("only members of a team with a submitted entry can vote")
+
+
+def vote_refusal(conn: sqlite3.Connection, event: sqlite3.Row, actor: Actor | None) -> str | None:
+    """Why this visitor cannot vote in this event, or None if they can, so a
+    page never offers a ballot that will be refused."""
+    if actor is None:
+        return "log in to vote"
+    try:
+        _voter_check(conn, event, actor)
+    except Forbidden as exc:
+        return exc.message
+    return None
 
 
 def ballot(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> dict:
@@ -92,14 +122,14 @@ def cast_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str) ->
             "INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
             (event["id"], actor.id, project_id, now(), actor.ip, nonce),
         )
-        # Sealed: the log proves a vote was cast and pins what it was, without
-        # saying what it was until the nonces are revealed at close.
-        audit.append(conn, "vote.cast", actor_id=actor.id, event_id=event["id"], subject="sealed",
-                     detail={"seal": vote_seal(nonce, project_id)}, ip=actor.ip)
+        # Sealed and anonymous: the log proves a vote was cast and pins what
+        # it was, without saying what it was until the nonces are revealed at
+        # close, and without ever saying whose it was.
+        audit.append(conn, "vote.cast", actor_id=None, event_id=event["id"], subject="sealed",
+                     detail={"seal": vote_seal(nonce, project_id)})
 
 
 def vote_seal(nonce: str, project_id: str) -> str:
-    import hashlib
     return hashlib.sha256(f"{nonce}:{project_id}".encode()).hexdigest()
 
 
@@ -126,8 +156,8 @@ def withdraw_vote(conn: sqlite3.Connection, actor: Actor | None, project_id: str
         if row is None:
             raise NotFound("you have not voted for this project")
         conn.execute("DELETE FROM votes WHERE voter_id = ? AND project_id = ?", (actor.id, project_id))
-        audit.append(conn, "vote.withdrawn", actor_id=actor.id, event_id=event["id"], subject="sealed",
-                     detail={"seal": vote_seal(row["nonce"] or "", project_id)}, ip=actor.ip)
+        audit.append(conn, "vote.withdrawn", actor_id=None, event_id=event["id"], subject="sealed",
+                     detail={"seal": vote_seal(row["nonce"] or "", project_id)})
 
 
 def vote_tallies(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> list[sqlite3.Row]:
@@ -189,10 +219,70 @@ def abuse_signals(conn: sqlite3.Connection, actor: Actor | None, event_id: str) 
 
 
 def remove_votes_of(conn: sqlite3.Connection, actor: Actor | None, event_id: str, voter_id: str, reason: str) -> int:
+    """Void every vote of one account, with a reason. The seals of the voided
+    votes go into the log, so the public tally check can account for them.
+    Refused once results are published: the signed record carries the vote."""
     actor = require_organizer(conn, event_id, actor)
     reason = clean_text(reason, "reason", required=True, max_len=300)
     with transaction(conn):
-        cur = conn.execute("DELETE FROM votes WHERE event_id = ? AND voter_id = ?", (event_id, voter_id))
+        if get_event(conn, event_id)["results_published_at"]:
+            raise Conflict("results are published and the signed record carries the vote; it can no longer change")
+        rows = conn.execute("SELECT project_id, nonce FROM votes WHERE event_id = ? AND voter_id = ?",
+                            (event_id, voter_id)).fetchall()
+        if not rows:
+            raise NotFound("that account has no votes in this event")
+        conn.execute("DELETE FROM votes WHERE event_id = ? AND voter_id = ?", (event_id, voter_id))
+        seals = sorted(vote_seal(r["nonce"] or "", r["project_id"]) for r in rows)
         audit.append(conn, "votes.voided", actor_id=actor.id, event_id=event_id, subject=voter_id,
-                     detail={"removed": cur.rowcount, "reason": reason}, ip=actor.ip)
-    return cur.rowcount
+                     detail={"removed": len(rows), "reason": reason, "seals": seals}, ip=actor.ip)
+    return len(rows)
+
+
+def vote_log(conn: sqlite3.Connection, event_id: str) -> dict:
+    """After voting closes, public: every vote entry of the audit log, with
+    no voters, and the revealed votes, so anyone can recompute the tally:
+    counted = cast seals - withdrawn seals - voided seals, and each revealed
+    vote's sha256(nonce:project) must be one of the counted seals."""
+    event = get_event(conn, event_id)
+    if phase(event)["voting"] != "closed":
+        raise Forbidden("votes are sealed until voting closes")
+    entries = []
+    for r in conn.execute(
+        "SELECT seq, at, action, detail FROM audit_log WHERE event_id = ? "
+        "AND action IN ('vote.cast', 'vote.withdrawn', 'votes.voided') ORDER BY seq", (event_id,)
+    ):
+        detail = json.loads(r["detail"])
+        if r["action"] == "votes.voided":
+            detail = {"removed": detail.get("removed"), "reason": detail.get("reason"), "seals": detail.get("seals", [])}
+        entries.append({"seq": r["seq"], "at": r["at"], "action": r["action"], "detail": detail})
+    return {"event": event_id, "entries": entries, "votes": vote_reveal(conn, None, event_id)["votes"]}
+
+
+def counted_seals(log: dict) -> set[str]:
+    """The tally rule, as a checker would apply it to vote_log's output."""
+    cast, gone = set(), set()
+    for e in log["entries"]:
+        if e["action"] == "vote.cast":
+            cast.add(e["detail"]["seal"])
+        elif e["action"] == "vote.withdrawn":
+            gone.add(e["detail"]["seal"])
+        else:
+            gone.update(e["detail"].get("seals", []))
+    return cast - gone
+
+
+def tally_summary(conn: sqlite3.Connection, event_id: str) -> dict | None:
+    """The closed community vote, as the results record signs it."""
+    event = get_event(conn, event_id)
+    if event["voting_mode"] == "off" or phase(event)["voting"] != "closed":
+        return None
+    seals = sorted(v["seal"] for v in vote_reveal(conn, None, event_id)["votes"])
+    voided = [json.loads(r["detail"]) for r in conn.execute(
+        "SELECT detail FROM audit_log WHERE event_id = ? AND action = 'votes.voided' ORDER BY seq", (event_id,))]
+    return {
+        "mode": event["voting_mode"], "opened": event["voting_open"], "closed": event["voting_close"],
+        **turnout(conn, event_id),
+        "tally": [{"project": r["id"], "votes": r["votes"]} for r in vote_tallies(conn, None, event_id)],
+        "counted_seals_sha256": hashlib.sha256(" ".join(seals).encode()).hexdigest(),
+        "voided": {"votes": sum(v.get("removed", 0) for v in voided), "reasons": [v.get("reason") for v in voided]},
+    }

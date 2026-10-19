@@ -72,8 +72,12 @@
         {% endif %}
         {% if phase.voting == 'open' %}
           <h3>Community vote</h3>
+          {% if vote_refusal %}
+          <p class="small">{{ vote_refusal | sentence }}</p>
+          {% else %}
           <p class="small">{{ event.votes_per_voter }} votes each. Your ballot is shuffled just for you; counts stay hidden until {{ event.voting_close | ts }}.</p>
           <a class="btn" href="/events/{{ event.id }}/vote">Open your ballot</a>
+          {% endif %}
         {% endif %}
       {% endif %}
       {% if phase.voting == 'closed' %}<p><a href="/events/{{ event.id }}/votes">Community vote results</a></p>{% endif %}

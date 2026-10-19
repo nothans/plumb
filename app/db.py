@@ -3,6 +3,7 @@
 import secrets
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,8 +20,28 @@ MIGRATIONS: dict[int, list[str]] = {
 }
 
 
+# The portal's one clock. Everything that asks "what time is it" (phases,
+# deadlines, timestamps, the audit log) asks here, so the demo's replay event
+# can be run through the real domain functions at the times it describes.
+_clock: ContextVar[datetime | None] = ContextVar("plumb_clock", default=None)
+
+
+def utcnow() -> datetime:
+    return _clock.get() or datetime.now(UTC)
+
+
+@contextmanager
+def clock_at(when: datetime):
+    """Run the enclosed calls as if it were `when` (seeding and tests only)."""
+    token = _clock.set(when.astimezone(UTC))
+    try:
+        yield
+    finally:
+        _clock.reset(token)
+
+
 def now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_ts(value: str | None) -> datetime | None:

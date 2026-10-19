@@ -69,7 +69,7 @@
   {% else %}<p class="muted">None.</p>{% endif %}
   <h3>Projects drawing votes from new accounts</h3>
   {% if signals.concentrated %}
-  <ul>{% for r in signals.concentrated %}<li>{{ r.title }}: {{ r.from_new_accounts }} of {{ r.votes }} votes from accounts made after voting opened.</li>{% endfor %}</ul>
+  <ul>{% for r in signals.concentrated %}<li>{% if r.votes is none %}One project has {{ r.from_new_accounts }} votes from accounts made after voting opened. It is named, with its total, when voting closes, so the signal cannot leak the race.{% else %}{{ r.title }}: {{ r.from_new_accounts }} of {{ r.votes }} votes from accounts made after voting opened.{% endif %}</li>{% endfor %}</ul>
   {% else %}<p class="muted">None.</p>{% endif %}
   <h3>Rate limits since the last restart</h3>
   {% if refused %}<ul>{% for k, v in refused.items() %}<li>{{ k }}: {{ v }} refused</li>{% endfor %}</ul>{% else %}<p class="muted">Nothing refused.</p>{% endif %}

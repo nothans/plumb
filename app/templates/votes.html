@@ -12,4 +12,12 @@
   <tbody>{% for t in tallies %}<tr><td class="num">{{ loop.index }}</td><td><a href="/projects/{{ t.id }}">{{ t.title }}</a></td><td>{{ t.team_name }}</td><td class="num">{{ t.votes }}</td></tr>{% endfor %}</tbody>
 </table>
 </div>
+<div class="panel">
+  <h2>Check the count yourself</h2>
+  <p>While the vote was open, the audit log recorded each vote only as a seal, sha256(nonce:project), with no voter.
+  Now that it has closed, <a href="/api/v1/events/{{ event.id }}/votes/log">the vote log</a> lists every seal cast, withdrawn and voided (with the organizer's reason), and every counted vote with its nonce.
+  Recompute each counted vote's seal and find it among the seals cast and not withdrawn or voided: the table above must be what is left.
+  {% if published %}The same tally, with a digest of the counted seals, is signed into the <a href="/events/{{ event.id }}/results">results record</a>.{% endif %}</p>
+  {% if voided %}<p class="small muted">{{ voided }} vote{{ '' if voided == 1 else 's' }} voided by organizers, each with a reason in the log.</p>{% endif %}
+</div>
 {% endblock %}

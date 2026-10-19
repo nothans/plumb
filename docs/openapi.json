@@ -4292,7 +4292,7 @@
     },
     "/api/v1/events/{event_id}/void-votes": {
       "post": {
-        "description": "Remove every vote of one account, with a reason (organizers).",
+        "description": "Remove every vote of one account, with a reason (organizers, until results are published).",
         "operationId": "void_votes_api_v1_events__event_id__void_votes_post",
         "parameters": [
           {
@@ -4493,6 +4493,105 @@
           }
         ],
         "summary": "Tallies",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/votes/log": {
+      "get": {
+        "description": "After voting closes, public: the vote entries of the audit log (seals, withdrawals, voids with\ntheir reasons, never a voter) and the revealed votes. Counted = cast - withdrawn - voided seals;\nevery revealed vote's sha256(nonce:project) must be a counted seal.",
+        "operationId": "vote_log_api_v1_events__event_id__votes_log_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not logged in: send a bearer token or a session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Logged in, but this role may not do that"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "No such thing, or not visible to you"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not now: a deadline, a lock, or a conflicting state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too many attempts; wait and retry"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Vote Log",
         "tags": [
           "v1"
         ]

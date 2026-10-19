@@ -143,6 +143,7 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             "rubric_history": domain.rubric_history(conn, event_id),
             "awards": chosen,
             "ranking": ranking,
+            "community_vote": domain.tally_summary(conn, event_id),
             "excluded_reviews": len(res["excluded"]),
             "audit_head": head,
         }, base_url)

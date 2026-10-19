@@ -17,11 +17,10 @@ import random
 import sqlite3
 import sys
 from datetime import timedelta
-from secrets import token_hex
 
 from . import audit, domain, records, transfer
 from .config import Settings, load_settings
-from .db import connect, init_schema, now, parse_ts, to_ts, transaction
+from .db import clock_at, connect, init_schema, now, parse_ts, to_ts, transaction
 from .security import hash_password, token_hash
 from .signing import Signer
 
@@ -119,8 +118,10 @@ def seed_demo(conn, settings: Settings) -> None:
 
 def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, org_id: str) -> None:
     """The fixture event again, run to the end: judged, voted, moderated and
-    published. Seeded through the same domain functions a real event uses,
-    so everything on its pages is produced by Plumb, not faked into tables."""
+    published. Every step goes through the same domain function a real event
+    uses, with the clock set to when that step happened in the story, so the
+    accounts, votes, seals, comments and audit entries on its pages are
+    produced by Plumb, not written into tables."""
     from .signing import Signer
     doc = json.loads(json.dumps(fixtures))
     doc["event"]["name"] = "Sample Hack 2026 (published replay)"
@@ -134,15 +135,14 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
     close = parse_ts(doc["event"]["submissions_close"])
     v_open, v_close = close + timedelta(days=1), close + timedelta(days=8)
 
-    tracks = {t["name"]: t["id"] for t in domain.tracks(conn, REPLAY_EVENT)}
-    with transaction(conn):
-        conn.execute("UPDATE events SET voting_mode = 'accounts', voting_open = ?, voting_close = ?, judging_close = ? "
-                     "WHERE id = ?", (to_ts(v_open), to_ts(v_close), to_ts(close + timedelta(days=10)), REPLAY_EVENT))
-        for pos, (name, track) in enumerate([("Grand prize", None), ("Runner-up", None),
-                                             ("Best security hack", tracks.get("Security")),
-                                             ("Best accessibility hack", tracks.get("Accessibility"))]):
-            conn.execute("INSERT INTO prizes(id, event_id, track_id, name, description, position) VALUES (?,?,?,?,?,?)",
-                         (f"prz_replay_{pos}", REPLAY_EVENT, track, name, "", pos))
+    # Before the deadline, the organizer set up the vote, the judging window and the prizes.
+    with clock_at(close - timedelta(days=25)):
+        domain.update_event(conn, org, REPLAY_EVENT, {
+            "voting_mode": "accounts", "voting_open": to_ts(v_open), "voting_close": to_ts(v_close),
+            "judging_close": to_ts(close + timedelta(days=10)),
+        }, prizes=[{"name": "Grand prize"}, {"name": "Runner-up"},
+                   {"name": "Best security hack", "track_name": "Security"},
+                   {"name": "Best accessibility hack", "track_name": "Accessibility"}])
     projects = [r["id"] for r in domain.gallery(conn, event_id=REPLAY_EVENT, limit=10000)[0]]
 
     # The organizer resolves the duplicate the way a real one would.
@@ -151,48 +151,43 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
     if dup:
         domain.resolve_duplicate(conn, org, dup["duplicate_of"], dup["id"])
 
-    # Community: honest voters (accounts older than the vote), then the sock puppets.
+    # Community: honest voters, whose accounts are older than the vote, then a
+    # cluster of sock puppets made mid-vote from one address.
     rng = random.Random(2026)
     pw = hash_password(DEMO_PASSWORD)
     honest = []
     for i, name in enumerate(DEMO_VOTERS):
-        uid = domain.create_user(conn, f"voter{i + 1:02d}@example.net", f"{name} (demo voter)", pw,
-                                 ip=f"198.51.100.{20 + i}")
-        honest.append((uid, name, f"198.51.100.{20 + i}"))
+        ip = f"198.51.100.{20 + i}"
+        with clock_at(close - timedelta(days=20 - i % 10)):
+            uid = domain.create_user(conn, f"voter{i + 1:02d}@example.net", f"{name} (demo voter)", pw, ip=ip)
+        honest.append(domain.Actor(id=uid, email=f"voter{i + 1:02d}@example.net", name=name, is_admin=False, ip=ip))
+    target = projects[len(projects) // 2]
+    for k, voter in enumerate(honest):
+        with clock_at(v_open + timedelta(hours=2 + 5 * k)):
+            for pid in rng.sample(projects, 3):
+                domain.cast_vote(conn, voter, pid)
     socks = []
     for i in range(5):
-        uid = domain.create_user(conn, f"fresh{i + 1}@example.net", f"fresh{i + 1}", pw, ip="203.0.113.7")
-        socks.append(uid)
-    with transaction(conn):
-        for k, (uid, _, _) in enumerate(honest):
-            conn.execute("UPDATE users SET created_at = ? WHERE id = ?", (to_ts(close - timedelta(days=20 - k % 10)), uid))
-        for k, uid in enumerate(socks):
-            conn.execute("UPDATE users SET created_at = ? WHERE id = ?", (to_ts(v_open + timedelta(days=3, minutes=k)), uid))
-        target = projects[len(projects) // 2]
-        for k, (uid, _, ip) in enumerate(honest):
-            for pid in rng.sample(projects, 3):
-                conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
-                             (REPLAY_EVENT, uid, pid, to_ts(v_open + timedelta(hours=2 + 5 * k)), ip, token_hex(16)))
-        for k, uid in enumerate(socks):
-            conn.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, ip, nonce) VALUES (?,?,?,?,?,?)",
-                         (REPLAY_EVENT, uid, target, to_ts(v_open + timedelta(days=3, minutes=2 + k)), "203.0.113.7",
-                          token_hex(16)))
-        audit.append(conn, "demo.votes_seeded", actor_id=admin.id, event_id=REPLAY_EVENT, subject=REPLAY_EVENT,
-                     detail={"honest_voters": len(honest), "planted_sock_puppets": len(socks), "target": target})
+        with clock_at(v_open + timedelta(days=3, minutes=i)):
+            uid = domain.create_user(conn, f"fresh{i + 1}@example.net", f"fresh{i + 1}", pw, ip="203.0.113.7")
+        sock = domain.Actor(id=uid, email=f"fresh{i + 1}@example.net", name=f"fresh{i + 1}", is_admin=False,
+                            ip="203.0.113.7")
+        with clock_at(v_open + timedelta(days=3, minutes=2 + i)):
+            domain.cast_vote(conn, sock, target)
+        socks.append(sock)
 
     # Comments, one of them spam that an organizer hid.
-    for (name, text), pid in zip(DEMO_COMMENTS, projects[:4]):
-        uid = next(u for u, n, _ in honest if n == name)
-        voter = domain.Actor(id=uid, email="", name=name, is_admin=False)
-        domain.add_comment(conn, voter, pid, text)
-    spammer = domain.Actor(id=socks[0], email="", name="fresh1", is_admin=False)
-    cid = domain.add_comment(conn, spammer, target, SPAM)
-    domain.hide_comment(conn, org, cid, "spam from a sock-puppet account")
-
-    # An organizer has already voided two of the five; the other three are
-    # still waiting on the integrity page for a decision.
-    for uid in socks[:2]:
-        domain.remove_votes_of(conn, org, REPLAY_EVENT, uid, "account made mid-vote, same address as four others")
+    for k, ((name, text), pid) in enumerate(zip(DEMO_COMMENTS, projects[:4])):
+        with clock_at(v_open + timedelta(hours=3 + 7 * k)):
+            domain.add_comment(conn, next(v for v in honest if v.name == name), pid, text)
+    with clock_at(v_open + timedelta(days=3, minutes=10)):
+        cid = domain.add_comment(conn, socks[0], target, SPAM)
+    with clock_at(v_open + timedelta(days=4)):
+        domain.hide_comment(conn, org, cid, "spam from a sock-puppet account")
+        # The organizer voided two of the five; the other three are still
+        # waiting on the integrity page for a decision.
+        for sock in socks[:2]:
+            domain.remove_votes_of(conn, org, REPLAY_EVENT, sock.id, "account made mid-vote, same address as four others")
 
     # A few direct comparisons from the three busiest judges, as their own scores order them.
     from . import normalize, pairwise
@@ -203,14 +198,17 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
         if score is not None and not r["duplicate_of"]:
             by_judge.setdefault(r["judge_id"], []).append(normalize.Observation(r["judge_id"], r["project_id"], score))
     busiest = sorted(by_judge, key=lambda j: -len(by_judge[j]))[:3]
-    with transaction(conn):
-        for j in busiest:
+    for j in busiest:
+        user = domain.get_user(conn, j)
+        judge = domain.Actor(id=j, email=user["email"], name=user["name"], is_admin=False)
+        seen = set()
+        with clock_at(close + timedelta(days=2)):
             for c in pairwise.implied(by_judge[j]):
-                if c.weight < 1:
+                pair = frozenset((c.winner, c.loser))
+                if c.weight < 1 or pair in seen:
                     continue
-                a, b = sorted((c.winner, c.loser))
-                conn.execute("INSERT OR IGNORE INTO comparisons(event_id, judge_id, project_a, project_b, winner, created_at) "
-                             "VALUES (?,?,?,?,?,?)", (REPLAY_EVENT, j, a, b, c.winner, to_ts(close + timedelta(days=2))))
+                seen.add(pair)
+                domain.record_comparison(conn, judge, REPLAY_EVENT, c.winner, c.loser, c.winner)
 
     # Publish, with the suggested prize winners, signed with this portal's key.
     signer = Signer.load_or_create(settings.signing_key_path)
