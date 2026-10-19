@@ -12,6 +12,7 @@ from .core import (
 )
 from .events import (
     criteria,
+    get_event,
     require_organizer,
 )
 from .judging import (
@@ -39,6 +40,7 @@ class _SafeWriter:
 
 
 def scores_csv(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> str:
+    get_event(conn, event_id)   # an admin asking for an event that does not exist gets 404, not an empty file
     require_organizer(conn, event_id, actor)
     crit = criteria(conn, event_id)
     buf = io.StringIO()
@@ -63,8 +65,10 @@ def results_csv(conn: sqlite3.Connection, actor: Actor | None, event_id: str) ->
                 "adjusted_0_100", "interval90_low", "interval90_high", "p_beats_next"])
     for p in res["fit"].projects:
         proj = res["projects"][p.project]
-        w.writerow([p.rank, p.project, proj["title"], proj["team_name"], proj["track_name"] or "", p.n_reviews,
-                    f"{p.raw_mean:.2f}", p.raw_rank, f"{p.adjusted:.2f}", f"{p.low:.2f}", f"{p.high:.2f}",
+        # An interval the reviews cannot support yet is left empty, never "inf".
+        lo, hi = ("", "") if p.low is None else (f"{p.low:.2f}", f"{p.high:.2f}")
+        w.writerow([p.rank, p.project, proj["title"], proj["team_name"], proj.get("track_name") or "", p.n_reviews,
+                    f"{p.raw_mean:.2f}", p.raw_rank, f"{p.adjusted:.2f}", lo, hi,
                     "" if p.p_above_next is None else f"{p.p_above_next:.3f}"])
     return buf.getvalue()
 

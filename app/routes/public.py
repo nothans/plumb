@@ -7,25 +7,26 @@ from __future__ import annotations
 import json
 import math
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import domain, ratelimit, records
-from ..web import actor, body, conn_for, redirect, render
+from ..web import actor, conn_for, form_body, redirect, render
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
 PAGE_SIZE = 48
 
 
 @router.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, archived: int = 0):
     conn = conn_for(request)
     me = actor(request)
     events = []
-    for e in domain.list_events(conn):
+    for e in domain.list_events(conn, archived=bool(archived)):
         events.append({"event": e, "phase": domain.phase(e), "projects": domain.live_count(conn, e["id"]),
                        "roles": domain.roles(conn, e["id"], me)})
-    return render(request, "home.html", events=events)
+    return render(request, "home.html", events=events, archived=bool(archived),
+                  archived_count=len(domain.list_events(conn, archived=True)))
 
 
 @router.get("/events/{event_id}", response_class=HTMLResponse)
@@ -85,8 +86,7 @@ def project_page(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/comments")
-async def post_comment(request: Request, project_id: str):
-    data = await body(request)
+def post_comment(request: Request, project_id: str, data: dict = Depends(form_body)):
     me = actor(request)
     ratelimit.check(request.app.state.limiter, "comment", me.id if me else None)
     domain.add_comment(conn_for(request), me, project_id, data.get("body", ""))
@@ -94,8 +94,7 @@ async def post_comment(request: Request, project_id: str):
 
 
 @router.post("/comments/{comment_id}/hide")
-async def hide_comment(request: Request, comment_id: str):
-    data = await body(request)
+def hide_comment(request: Request, comment_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     domain.hide_comment(conn, actor(request), comment_id, data.get("reason", ""))
     project_id = conn.execute("SELECT project_id FROM comments WHERE id = ?", (comment_id,)).fetchone()["project_id"]
@@ -112,8 +111,7 @@ def ballot(request: Request, event_id: str):
 
 
 @router.post("/projects/{project_id}/vote")
-async def vote(request: Request, project_id: str):
-    data = await body(request)
+def vote(request: Request, project_id: str, data: dict = Depends(form_body)):
     me = actor(request)
     ratelimit.check(request.app.state.limiter, "vote", me.id if me else None)
     conn = conn_for(request)
@@ -204,8 +202,7 @@ def verify_form(request: Request, record: str = ""):
 
 
 @router.post("/verify", response_class=HTMLResponse)
-async def verify_post(request: Request):
-    data = await body(request)
+def verify_post(request: Request, data: dict = Depends(form_body)):
     pasted = str(data.get("envelope", ""))
     try:
         env = json.loads(pasted)
@@ -218,7 +215,7 @@ async def verify_post(request: Request):
 @router.get("/.well-known/plumb-key.json")
 def public_key(request: Request):
     signer = request.app.state.signer
-    return JSONResponse({"keys": [signer.public_jwk()], "algorithm": "Ed25519",
+    return JSONResponse({"keys": signer.jwks(), "algorithm": "Ed25519",
                          "canonicalization": "JSON, sorted keys, separators (',', ':'), UTF-8"})
 
 

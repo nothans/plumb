@@ -170,6 +170,8 @@ def gallery(conn: sqlite3.Connection, *, event_id: str | None = None, track_id: 
     if event_id:
         where.append("p.event_id = ?")
         args.append(event_id)
+    else:
+        where.append("e.archived_at IS NULL")
     if track_id:
         where.append("p.track_id = ?")
         args.append(track_id)
@@ -180,9 +182,10 @@ def gallery(conn: sqlite3.Connection, *, event_id: str | None = None, track_id: 
     clause = " AND ".join(where)
     total = conn.execute(f"SELECT COUNT(*) {PROJECT_FROM} WHERE {clause}", args).fetchone()[0]
     rows = conn.execute(
-        # Events in the order they were created (the demo's fixture event first),
-        # then projects in id order: stable across pages and across restarts.
-        f"SELECT {PROJECT_COLUMNS} {PROJECT_FROM} WHERE {clause} ORDER BY e.created_at, e.id, p.id LIMIT ? OFFSET ?",
+        # The newest event first, then projects in id order: stable across
+        # pages and across restarts.
+        f"SELECT {PROJECT_COLUMNS} {PROJECT_FROM} WHERE {clause} ORDER BY e.created_at DESC, e.id DESC, p.id "
+        "LIMIT ? OFFSET ?",
         (*args, limit, offset),
     ).fetchall()
     return rows, total

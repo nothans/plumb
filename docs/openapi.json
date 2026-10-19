@@ -584,6 +584,21 @@
             ],
             "description": "prize id -> project id; omitted prizes get the suggested winner, an empty string leaves a prize unawarded",
             "title": "Awards"
+          },
+          "reasons": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "prize id -> the organizers' reason for the award; required for a close call, signed into the record",
+            "title": "Reasons"
           }
         },
         "title": "PublishIn",
@@ -784,6 +799,17 @@
       },
       "TokenIn": {
         "properties": {
+          "days": {
+            "default": 90,
+            "description": "how long the token lasts",
+            "enum": [
+              30,
+              90,
+              365
+            ],
+            "title": "Days",
+            "type": "integer"
+          },
           "label": {
             "title": "Label",
             "type": "string"
@@ -1097,8 +1123,20 @@
     },
     "/api/v1/events": {
       "get": {
-        "description": "All events, with their phase, tracks, prizes and rubric.",
+        "description": "Events, latest deadline first. Archived events are listed only with ?archived=true.",
         "operationId": "list_events_api_v1_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Archived",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1667,6 +1705,192 @@
           }
         ],
         "summary": "Abuse",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/archive": {
+      "delete": {
+        "description": "Bring an archived event back to the listings.",
+        "operationId": "restore_event_api_v1_events__event_id__archive_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not logged in: send a bearer token or a session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Logged in, but this role may not do that"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "No such thing, or not visible to you"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not now: a deadline, a lock, or a conflicting state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too many attempts; wait and retry"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Event",
+        "tags": [
+          "v1"
+        ]
+      },
+      "post": {
+        "description": "Take the event off the listings and the gallery. Nothing is deleted; its links keep working.",
+        "operationId": "archive_event_api_v1_events__event_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not logged in: send a bearer token or a session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Logged in, but this role may not do that"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "No such thing, or not visible to you"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not now: a deadline, a lock, or a conflicting state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too many attempts; wait and retry"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Archive Event",
         "tags": [
           "v1"
         ]
@@ -3780,7 +4004,7 @@
     },
     "/api/v1/events/{event_id}/results": {
       "get": {
-        "description": "The normalized ranking with intervals: organizers any time, everyone after publication.",
+        "description": "The ranking with 90% intervals. Organizers see it live; after publication everyone sees it, read from the\nsigned record. A number the reviews cannot support yet (an interval before there are more reviews than\nprojects) is null.",
         "operationId": "results_api_v1_events__event_id__results_get",
         "parameters": [
           {

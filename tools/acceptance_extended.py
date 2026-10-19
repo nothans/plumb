@@ -417,7 +417,8 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     _, scores = judge.json("GET", f"/api/judge/scores?event={eid}")
     items = sorted(({"project": s["project_id"], "values": s["values"], "comment": s["comment"],
                      "updated_at": s["updated_at"]} for s in scores["reviews"]), key=lambda x: x["project"])
-    digest = hashlib.sha256(canonical(items).encode()).hexdigest()
+    salt = (scores.get("digest_salts") or {}).get(eid)
+    digest = hashlib.sha256(((salt + ":") if salt else "").encode() + canonical(items).encode()).hexdigest()
     rep.check("T4", "judge record matches the judge's own scores",
               jrec and json.loads(jrec["payload"])["review_digest"] == digest, "digest recomputed from /api/judge/scores")
 
@@ -434,6 +435,16 @@ def run(cfg, fixtures, webhook_host, rep: Report):
               f"received {len(got)}: {sorted(set(acts))}", f"listener at {webhook_host}:{receiver.port}")
     rep.check("T4", "webhook deliveries are signed", got and signed)
     rep.check("T4", "webhook deliveries arrive in order", got and seqs == sorted(set(seqs)))
+    # Each entry's hash recomputes from the fields delivered (the portal's chain format, v2), and each
+    # names the previous entry of the event, so a receiver can tell that nothing was left out.
+    entries = [json.loads(b) for _, b in got]
+    fields = ("seq", "at", "event_id", "actor_id", "action", "subject", "detail", "ip_tag", "prev_hash", "event_prev", "v")
+    recomputed = all(e.get("v") == 2 and hashlib.sha256(canonical(
+        {k: (e["detail_json"] if k == "detail" else e.get(k)) for k in fields}).encode()).hexdigest() == e["hash"]
+        for e in entries)
+    linked = all(b["event_prev"] == a["hash"] for a, b in zip(entries, entries[1:]))
+    rep.check("T4", "webhook entries verify and chain within the event", entries and recomputed and linked,
+              f"{len(entries)} entries: hashes recompute {recomputed}, each links to the one before {linked}")
 
     # --- T4: embeddable widget ---
     s_w, w_page, w_head = anon.request("GET", f"/embed/events/{eid}?limit=48")
@@ -478,6 +489,14 @@ def run(cfg, fixtures, webhook_host, rep: Report):
     admin.request("DELETE", f"/api/v1/me/tokens/{hint}")
     s_after = bearer.request("GET", "/api/v1/me")[0] if bearer else 0
     rep.check("T4", "API tokens work and can be revoked", (s_me, s_after) == (200, 401), f"before/after revoke: {s_me}, {s_after}")
+
+    # Tidy up: the scratch events are archived, so repeated runs do not fill the demo's home page and gallery.
+    codes = [admin.request("POST", f"/api/v1/events/{e}/archive")[0] for e in (eid, eid + "_rt")]
+    _, listed = anon.json("GET", "/api/v1/events")
+    still = [e["id"] for e in (listed or []) if e["id"] in (eid, eid + "_rt")]
+    reachable = anon.request("GET", f"/events/{eid}")[0]
+    rep.check("T4", "scratch events archive out of the listings", codes == [204, 204] and not still and reachable == 200,
+              f"archive: {codes}, still listed: {still}, event page: {reachable}")
 
 
 def main():

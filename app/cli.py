@@ -21,7 +21,7 @@ from datetime import timedelta
 from . import audit, domain, records, transfer
 from .config import Settings, load_settings
 from .db import clock_at, connect, init_schema, now, parse_ts, to_ts, transaction
-from .security import hash_password, token_hash
+from .security import MIN_PASSWORD, hash_password, password_problem, token_hash
 from .signing import Signer
 
 DEMO_PASSWORD = "plumb-demo-2026"
@@ -211,8 +211,14 @@ def seed_replay(conn, fixtures: dict, settings: Settings, admin: domain.Actor, o
                 domain.record_comparison(conn, judge, REPLAY_EVENT, c.winner, c.loser, c.winner)
 
     # Publish, with the suggested prize winners, signed with this portal's key.
+    # A close call needs the organizers' reason on the record; the replay's
+    # organizers went with the ranking and say so.
     signer = Signer.load_or_create(settings.signing_key_path)
-    records.publish_results(conn, org, REPLAY_EVENT, signer, settings.base_url or "http://localhost:8080")
+    res = domain.compute_results(conn, REPLAY_EVENT)
+    reasons = {s["prize"]["id"]: "A close call; the organizers awarded it to the top-ranked candidate."
+               for s in domain.default_awards(conn, REPLAY_EVENT, res) if s["close_call"]}
+    records.publish_results(conn, org, REPLAY_EVENT, signer, settings.base_url or "http://localhost:8080",
+                            reasons=reasons)
 
 
 def ensure_demo_sessions(conn) -> dict[str, tuple[str, str]]:
@@ -305,10 +311,14 @@ def bootstrap(settings: Settings, out=sys.stdout) -> None:
     if settings.admin_email and settings.admin_password and not domain.user_by_email(conn, settings.admin_email):
         if settings.demo:
             print("plumb: ignoring PLUMB_ADMIN_EMAIL in demo mode; the demo has its own admin", file=out)
+        elif problem := password_problem(settings.admin_password, settings.admin_email):
+            raise SystemExit(f"plumb: PLUMB_ADMIN_PASSWORD refused: {problem}")
         else:
             domain.create_user(conn, settings.admin_email, "Admin", hash_password(settings.admin_password),
                                is_admin=True)
             print(f"created admin {settings.admin_email}", file=out)
+    with transaction(conn):
+        domain.prune_sessions(conn)
     print(f"plumb: database {settings.database_path}", file=out)
     print(f"plumb: signing key {signer.key_id}", file=out)
     if settings.demo:
@@ -334,9 +344,9 @@ def main(argv: list[str]) -> int:
     if argv[0] == "create-admin" and len(argv) == 3:
         conn = connect(settings.database_path)
         init_schema(conn)
-        password = getpass.getpass("password (12+ characters): ")
-        if len(password) < 12:
-            print("too short", file=sys.stderr)
+        password = getpass.getpass(f"password ({MIN_PASSWORD}+ characters): ")
+        if problem := password_problem(password, argv[1]):
+            print(problem, file=sys.stderr)
             return 1
         domain.create_user(conn, argv[1], argv[2], hash_password(password), is_admin=True)
         print("admin created")
@@ -347,15 +357,21 @@ def main(argv: list[str]) -> int:
         if user is None:
             print("no such account", file=sys.stderr)
             return 1
-        password = getpass.getpass("new password (10+ characters): ")
-        if len(password) < 10:
-            print("too short", file=sys.stderr)
+        password = getpass.getpass(f"new password ({MIN_PASSWORD}+ characters): ")
+        if problem := password_problem(password, user["email"]):
+            print(problem, file=sys.stderr)
             return 1
         with transaction(conn):
             conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(password), user["id"]))
-            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+            domain.end_credentials(conn, user["id"])
             audit.append(conn, "user.password_reset", actor_id=None, subject=user["id"], detail={"via": "cli"})
-        print("password set; existing sessions ended")
+        print("password set; existing sessions and API tokens ended")
+        return 0
+    if argv[0] == "rotate-key" and len(argv) == 1:
+        old = Signer.load_or_create(settings.signing_key_path)
+        new = Signer.rotate(settings.signing_key_path)
+        print(f"retired key {old.key_id} (still published, so its records keep verifying); new key {new.key_id}. "
+              "Restart the portal to sign with it.")
         return 0
     if argv[0] == "retire-demo" and len(argv) == 1:
         conn = connect(settings.database_path)

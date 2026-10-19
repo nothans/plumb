@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from .. import domain
 from ..db import transaction
-from ..security import hash_password
-from ..web import actor, body, client_ip, conn_for, redirect, render
+from ..security import hash_password, password_problem
+from ..web import actor, client_ip, conn_for, form_body, redirect, render
 from .account import start_session
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
@@ -25,8 +25,7 @@ def invitation(request: Request, token: str):
 
 
 @router.post("/invitations/{token}")
-async def accept(request: Request, token: str):
-    data = await body(request)
+def accept(request: Request, token: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     inv = domain.get_invitation(conn, token)
     me = actor(request)
@@ -37,8 +36,8 @@ async def accept(request: Request, token: str):
         # domain.may_claim_with). Claim and acceptance are one transaction.
         password = str(data.get("password", ""))
         try:
-            if len(password) < 10:
-                raise domain.Invalid("use a password of at least 10 characters")
+            if problem := password_problem(password, inv["email"]):
+                raise domain.Invalid(problem)
             if inv["accepted_at"]:
                 raise domain.Conflict("this invitation has already been used")
             if not domain.may_claim_with(conn, inv):
@@ -58,6 +57,40 @@ async def accept(request: Request, token: str):
     return redirect(f"/events/{event_id}", f"You are now a {inv['role']} for {inv['event_name']}.")
 
 
+@router.get("/claim/{token}", response_class=HTMLResponse)
+def claim(request: Request, token: str):
+    conn = conn_for(request)
+    try:
+        link = domain.get_claim_link(conn, token)
+    except (domain.NotFound, domain.Conflict) as exc:
+        return render(request, "claim.html", status_code=exc.status, link=None, token=token, error=exc.message)
+    return render(request, "claim.html", link=link, token=token,
+                  events=[domain.get_event(conn, e)["name"] for e in domain.events_of(conn, link["user_id"])])
+
+
+@router.post("/claim/{token}")
+def use_claim(request: Request, token: str, data: dict = Depends(form_body)):
+    """Holding the link is the proof of the address: an organizer of every
+    event the account belongs to made it for its owner (see
+    domain.issue_claim_link)."""
+    conn = conn_for(request)
+    password = str(data.get("password", ""))
+    try:
+        link = domain.get_claim_link(conn, token)
+        if problem := password_problem(password, link["email"]):
+            raise domain.Invalid(problem)
+        uid = domain.use_claim_link(conn, token, str(data.get("name", "")), hash_password(password), client_ip(request))
+    except domain.DomainError as exc:
+        try:
+            link = domain.get_claim_link(conn, token)
+        except domain.DomainError:
+            link = None
+        return render(request, "claim.html", status_code=exc.status, link=link, token=token, error=exc.message,
+                      events=[domain.get_event(conn, e)["name"] for e in domain.events_of(conn, link["user_id"])]
+                      if link else [])
+    return start_session(request, uid, "/me")
+
+
 @router.get("/events/{event_id}/judge", response_class=HTMLResponse)
 def queue(request: Request, event_id: str):
     conn = conn_for(request)
@@ -68,7 +101,7 @@ def queue(request: Request, event_id: str):
     return render(request, "judge_queue.html", event=event, phase=domain.phase(event), rows=rows, done=done)
 
 
-def _review_page(request: Request, project_id: str, *, form=None, error=None, status_code=200):
+def _review_page(request: Request, project_id: str, *, form=None, comment=None, error=None, status_code=200):
     conn = conn_for(request)
     me = domain.require_user(actor(request))
     project = domain.get_project(conn, project_id)
@@ -79,7 +112,8 @@ def _review_page(request: Request, project_id: str, *, form=None, error=None, st
     event = domain.get_event(conn, project["event_id"])
     review = domain.own_review(conn, me, project_id)
     values = form or (review["values"] if review else {})
-    comment = (form or {}).get("comment", review["comment"] if review else "")
+    if comment is None:
+        comment = review["comment"] if review else ""
     return render(request, "review_form.html", status_code=status_code, project=project, event=event,
                   phase=domain.phase(event), criteria=domain.criteria(conn, project["event_id"]), review=review,
                   values=values, comment=comment, error=error, members=domain.team_members(conn, project["team_id"]),
@@ -92,14 +126,18 @@ def review_form(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/review")
-async def save_review(request: Request, project_id: str):
-    data = await body(request)
+def save_review(request: Request, project_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     project = domain.get_project(conn, project_id)
+    # Criterion fields are prefixed, so a criterion called "comment" or "csrf"
+    # cannot collide with the form's own fields.
+    values = {k.removeprefix("score_"): v for k, v in data.items() if k.startswith("score_")}
+    comment = str(data.get("comment", ""))
     try:
-        domain.save_review(conn, actor(request), project_id, data, str(data.get("comment", "")))
+        domain.save_review(conn, actor(request), project_id, values, comment)
     except (domain.Invalid, domain.Conflict) as exc:
-        return _review_page(request, project_id, form=data, error=exc.message, status_code=exc.status)
+        return _review_page(request, project_id, form=values, comment=comment, error=exc.message,
+                            status_code=exc.status)
     return redirect(f"/events/{project['event_id']}/judge", f"Review saved for {project['title']}.")
 
 
@@ -115,8 +153,7 @@ def compare(request: Request, event_id: str, skip: str = ""):
 
 
 @router.post("/events/{event_id}/compare")
-async def record_compare(request: Request, event_id: str):
-    data = await body(request)
+def record_compare(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.record_comparison(conn_for(request), actor(request), event_id, str(data.get("a", "")),
                              str(data.get("b", "")), str(data.get("winner", "")))
     return redirect(f"/events/{event_id}/compare", "Recorded.")

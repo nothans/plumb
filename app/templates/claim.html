@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field with context %}
+{% block title %}Claim your account{% endblock %}
+{% block content %}
+<div class="panel narrow">
+  {% if link %}
+  <h1>Set up your Plumb account</h1>
+  <p>This link is for <strong>{{ link.email }}</strong>, who is part of {% for e in events %}{{ e }}{% if not loop.last %}, {% endif %}{% endfor %}. Choose a name and a password to log in.</p>
+  <form class="stack" method="post" action="/claim/{{ token }}">{{ csrf_field() }}
+    <label>Name<input type="text" name="name" maxlength="100" autocomplete="name" required></label>
+    <label>Password <span class="hint">At least {{ min_password }} characters; a few words together work well.</span><input type="password" name="password" minlength="{{ min_password }}" maxlength="256" autocomplete="new-password" required></label>
+    <div><button class="primary" type="submit">Set password and log in</button></div>
+  </form>
+  {% else %}
+  <h1>This link does not work</h1>
+  <p class="muted"><a href="/login">Log in</a>, or ask the event's organizer for a new link.</p>
+  {% endif %}
+</div>
+{% endblock %}

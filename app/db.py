@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 # Numbered migrations for databases created by an older version. schema.sql
 # always describes the current shape (and is idempotent), so a new database
@@ -17,6 +17,16 @@ MIGRATIONS: dict[int, list[str]] = {
     2: ["ALTER TABLE events ADD COLUMN pairwise INTEGER NOT NULL DEFAULT 0 CHECK (pairwise IN (0, 1))"],
     3: ["ALTER TABLE votes ADD COLUMN nonce TEXT"],
     4: ["ALTER TABLE events ADD COLUMN rubric_locked_at TEXT"],
+    5: [
+        # API tokens expire; tokens made before expiry existed get 90 days from the upgrade.
+        "ALTER TABLE api_tokens ADD COLUMN expires_at TEXT",
+        "UPDATE api_tokens SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+90 days') WHERE expires_at IS NULL",
+        # Audit rows from now on hash v2 (see audit.py); older rows keep v1 and still verify.
+        "ALTER TABLE audit_log ADD COLUMN v INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE audit_log ADD COLUMN ip_tag TEXT",
+        "ALTER TABLE audit_log ADD COLUMN event_prev TEXT",
+    ],
+    6: ["ALTER TABLE events ADD COLUMN archived_at TEXT"],
 }
 
 
@@ -68,11 +78,38 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+class NewerDatabase(RuntimeError):
+    pass
+
+
+def _backup_before_migrating(conn: sqlite3.Connection, current: int) -> Path | None:
+    """Copy the database aside before the first migration touches it, so an
+    upgrade that goes wrong can be undone by putting the copy back."""
+    path = Path(conn.execute("PRAGMA database_list").fetchone()["file"] or "")
+    if not path.name:
+        return None   # in memory
+    target = path.with_name(f"{path.name}.before-schema-{SCHEMA_VERSION}-from-{current}.bak")
+    if target.exists():
+        return target
+    copy = sqlite3.connect(target)
+    with copy:
+        conn.backup(copy)
+    copy.close()
+    return target
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     has_events = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'events'").fetchone()
     if has_events:
         row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
         current = int(row[0]) if row else 1
+        if current > SCHEMA_VERSION:
+            # Older code would write rows the newer schema's rules (and the
+            # audit chain's format) do not expect. Refuse instead of guessing.
+            raise NewerDatabase(f"this database is at schema {current}, made by a newer Plumb; this version "
+                                f"understands up to {SCHEMA_VERSION}. Run the newer version, or restore a backup.")
+        if current < SCHEMA_VERSION:
+            _backup_before_migrating(conn, current)
         for version in sorted(v for v in MIGRATIONS if v > current):
             conn.execute("BEGIN IMMEDIATE")
             try:

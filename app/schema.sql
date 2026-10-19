@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS events (
     pairwise             INTEGER NOT NULL DEFAULT 0 CHECK (pairwise IN (0, 1)),
     rubric_locked_at     TEXT,
     results_published_at TEXT,
+    archived_at          TEXT,                -- hidden from listings and the gallery; still reachable by link
     created_at           TEXT NOT NULL,
     CHECK (submissions_open < submissions_close),
     CHECK (voting_open IS NULL OR voting_close IS NULL OR voting_open < voting_close)
@@ -95,6 +96,18 @@ CREATE TABLE IF NOT EXISTS invitations (
     created_at  TEXT NOT NULL,
     accepted_at TEXT,
     accepted_by TEXT REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- A single-use link that lets the owner of an address set the password of
+-- an account an import created without one (a judge or team member from
+-- last year's event). Issued by an organizer who runs every event the
+-- account belongs to, so nobody can take over someone else's judge.
+CREATE TABLE IF NOT EXISTS claim_links (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    used_at    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS teams (
@@ -241,7 +254,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail    TEXT NOT NULL DEFAULT '{}',
     ip        TEXT,
     prev_hash TEXT NOT NULL,
-    hash      TEXT NOT NULL UNIQUE
+    hash      TEXT NOT NULL UNIQUE,
+    v          INTEGER NOT NULL DEFAULT 1,   -- hash version (audit.py); 2 since v1.1
+    ip_tag     TEXT,                         -- v2: keyed tag of ip, which the hash covers instead of ip
+    event_prev TEXT                          -- v2: hash of the previous row of the same event
 );
 CREATE INDEX IF NOT EXISTS audit_event ON audit_log(event_id, seq);
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit_log
@@ -273,12 +289,24 @@ CREATE TABLE IF NOT EXISTS records (
 );
 CREATE INDEX IF NOT EXISTS records_event ON records(event_id, kind);
 
+-- A random salt per judge per event, mixed into the review digest of their
+-- signed record. Without it, a judge with one review and no comment could
+-- have their scores recovered from the public digest by trying every
+-- combination. Only the judge (and the event's organizers) can read it.
+CREATE TABLE IF NOT EXISTS review_salts (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    judge_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    salt     TEXT NOT NULL,
+    PRIMARY KEY (event_id, judge_id)
+);
+
 CREATE TABLE IF NOT EXISTS api_tokens (
     token_hash TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     label      TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    last_used_at TEXT
+    last_used_at TEXT,
+    expires_at TEXT                         -- a token past this is refused; NULL is treated as expired
 );
 
 -- Webhooks stream the audit log: every audited action of the event is

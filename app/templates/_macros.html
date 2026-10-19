@@ -24,12 +24,16 @@
 {% endmacro %}
 
 {# One vocabulary for every probability Plumb shows: beats next, track
-   leads, prize winners. Under 60% is a statistical tie. #}
+   leads, prize winners. Under 60% is a statistical tie; under 40% the other
+   project is the likelier better one (an organizers' pick past the ranking).
+   The bands apply to the percentage shown, so the words never contradict it. #}
 {% macro certainty(p, against=none) %}
+{%- set q = none if p is none else (p | percent) / 100 -%}
 {%- if p is none -%}<span class="muted">&mdash;</span>
-{%- elif p < 0.6 -%}<span class="tag warn">{{ p | pct }} &middot; tie{% if against %} with {{ against }}{% endif %}</span>
-{%- elif p < 0.75 -%}<span class="tag">{{ p | pct }} &middot; leaning</span>
-{%- elif p < 0.9 -%}<span class="tag accent">{{ p | pct }} &middot; likely</span>
+{%- elif q < 0.4 -%}<span class="tag warn">{{ p | pct }} &middot; {% if against %}{{ against }}{% else %}the other{% endif %} likely ahead</span>
+{%- elif q < 0.6 -%}<span class="tag warn">{{ p | pct }} &middot; tie{% if against %} with {{ against }}{% endif %}</span>
+{%- elif q < 0.75 -%}<span class="tag">{{ p | pct }} &middot; leaning</span>
+{%- elif q < 0.9 -%}<span class="tag accent">{{ p | pct }} &middot; likely</span>
 {%- else -%}<span class="tag ok">{{ p | pct }} &middot; clear</span>{%- endif -%}
 {% endmacro %}
 

@@ -122,12 +122,12 @@ def test_invitation_creates_account_and_judge_can_review(app, organizer, db):
     uid = db.execute("SELECT id FROM users WHERE email = 'newjudge@example.net'").fetchone()["id"]
     post_form(organizer, f"/events/{FIX}/manage/assignments/add", {"judge_id": uid, "project_id": "prj_01"},
               csrf_from=f"/events/{FIX}/manage/judges")
-    form = {"functionality": "5", "quality": "4", "innovation": "3", "comment": "Tidy."}
+    form = {"score_functionality": "5", "score_quality": "4", "score_innovation": "3", "comment": "Tidy."}
     assert post_form(j, "/projects/prj_01/review", form, csrf_from=f"/events/{FIX}/judge").status_code == 303
     mine = j.get("/api/judge/scores").json()["reviews"]
     assert [r["values"] for r in mine] == [{"functionality": 5, "quality": 4, "innovation": 3}]
     # Out of range and unassigned are refused.
-    bad = {**form, "quality": "9"}
+    bad = {**form, "score_quality": "9"}
     assert post_form(j, "/projects/prj_01/review", bad, csrf_from=f"/events/{FIX}/judge").status_code == 422
     assert post_form(j, "/projects/prj_02/review", form, csrf_from=f"/events/{FIX}/judge").status_code == 403
 
@@ -330,7 +330,7 @@ def test_every_action_is_audited_and_the_chain_detects_tampering(organizer, db):
     db.execute("DROP TRIGGER audit_no_update")
     db.execute("UPDATE audit_log SET detail = '{}' WHERE seq = 2")
     result = audit.verify_chain(db)
-    assert result == {"ok": False, "checked": 1, "broken_at": 2}
+    assert result == {"ok": False, "checked": 1, "broken_at": 2, "full": True}
 
 
 # --- import and export ------------------------------------------------------------------------------------
@@ -358,14 +358,18 @@ def test_export_then_import_round_trips(app, organizer, db):
     assert r.json()["ids_renamed"] == 8 + 40 + 41  # every track, team and project id was taken
 
 
-def test_organizer_of_one_event_cannot_hijack_another_events_judge(app, organizer):
-    # organizer@example.org organizes evt_demo_live; tomas.varga is an unclaimed judge of evt_01.
-    r = organizer.post(f"/api/v1/events/{LIVE}/invitations", json={"email": "tomas.varga@example.org"})
+def test_organizer_of_one_event_cannot_hijack_another_events_judge(app, db):
+    # rival@example.org organizes only evt_demo_live; tomas.varga is an unclaimed judge of evt_01.
+    rival = signup(app, "rival@example.org", "Rival Organizer")
+    db.execute("INSERT INTO event_roles(event_id, user_id, role) SELECT ?, id, 'organizer' FROM users WHERE email = ?",
+               (LIVE, "rival@example.org"))
+    db.commit()
+    r = rival.post(f"/api/v1/events/{LIVE}/invitations", json={"email": "tomas.varga@example.org"})
     path = r.json()["link"].split("testserver")[1]
     anon = client_for(app)
     page = anon.get(path).text
     assert "already belongs to another event" in page
-    r = anon.post(path, data={"csrf": csrf_of(anon, "/login"), "name": "Mallory", "password": "long enough pw"},
+    r = anon.post(path, data={"csrf": csrf_of(anon, "/login"), "name": "Mallory", "password": "long enough password"},
                   follow_redirects=False)
     assert r.status_code == 403
     assert "plumb_session" not in r.cookies
@@ -429,3 +433,18 @@ def test_webhooks_stream_the_audit_log_in_order_with_signatures(organizer, setti
     failing = Deliverer(settings.database_path, send=lambda *a: 500)
     assert failing.run_once() == 0
     assert Deliverer(settings.database_path, send=fake_send).run_once() == 1
+
+
+def test_a_returning_judge_can_be_invited_by_the_organizer_of_all_their_events(app, organizer, db):
+    # organizer@example.org runs every event tomas.varga judged without an account, and evt_demo_live.
+    r = organizer.post(f"/api/v1/events/{LIVE}/invitations", json={"email": "tomas.varga@example.org"})
+    path = r.json()["link"].split("testserver")[1]
+    anon = client_for(app)
+    assert "already belongs to another event" not in anon.get(path).text
+    r = anon.post(path, data={"csrf": csrf_of(anon, "/login"), "name": "Tomas Varga", "password": "long enough password"},
+                  follow_redirects=False)
+    assert r.status_code == 303
+    roles = {row[0] for row in db.execute(
+        "SELECT r.event_id FROM event_roles r JOIN users u ON u.id = r.user_id WHERE u.email = ? AND r.role = 'judge'",
+        ("tomas.varga@example.org",))}
+    assert {FIX, LIVE} <= roles

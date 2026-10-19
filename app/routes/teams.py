@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import domain
-from ..web import actor, body, conn_for, redirect, render, wants_json
+from ..web import actor, conn_for, form_body, redirect, render, wants_json
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
 
@@ -30,8 +30,7 @@ def team_page(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/teams")
-async def create_team(request: Request, event_id: str):
-    data = await body(request)
+def create_team(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.create_team(conn_for(request), actor(request), event_id, data.get("name", ""))
     return redirect(f"/events/{event_id}/team", "Team created. Share the invite link with your teammates.")
 
@@ -46,8 +45,7 @@ def join_page(request: Request, code: str):
 
 
 @router.post("/join/{code}")
-async def join(request: Request, code: str):
-    await body(request)
+def join(request: Request, code: str, _: dict = Depends(form_body)):
     conn = conn_for(request)
     team_id = domain.join_team(conn, actor(request), code)
     event_id = conn.execute("SELECT event_id FROM teams WHERE id = ?", (team_id,)).fetchone()["event_id"]
@@ -55,8 +53,7 @@ async def join(request: Request, code: str):
 
 
 @router.post("/teams/{team_id}/leave")
-async def leave(request: Request, team_id: str):
-    await body(request)
+def leave(request: Request, team_id: str, _: dict = Depends(form_body)):
     conn = conn_for(request)
     event_id = conn.execute("SELECT event_id FROM teams WHERE id = ?", (team_id,)).fetchone()
     domain.leave_team(conn, actor(request), team_id)
@@ -64,8 +61,7 @@ async def leave(request: Request, team_id: str):
 
 
 @router.post("/teams/{team_id}/reset-invite")
-async def reset_invite(request: Request, team_id: str):
-    await body(request)
+def reset_invite(request: Request, team_id: str, _: dict = Depends(form_body)):
     conn = conn_for(request)
     domain.reset_invite(conn, actor(request), team_id)
     event_id = conn.execute("SELECT event_id FROM teams WHERE id = ?", (team_id,)).fetchone()["event_id"]
@@ -96,10 +92,9 @@ def new_project(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/projects/new")
-async def create_project(request: Request, event_id: str):
+def create_project(request: Request, event_id: str, data: dict = Depends(form_body)):
     """Create or save the team's entry. This is also the route the DOGFOOD
     checker posts to after the deadline, and must refuse."""
-    data = await body(request)
     submit = str(data.get("action", "submit" if wants_json(request) else "draft")) == "submit"
     try:
         pid = domain.save_project(conn_for(request), actor(request), event_id, data, submit=submit)
@@ -124,8 +119,7 @@ def edit_project(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/edit")
-async def save_edit(request: Request, project_id: str):
-    data = await body(request)
+def save_edit(request: Request, project_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     project = domain.get_project(conn, project_id)
     submit = data.get("action") == "submit" or project["status"] == "submitted"
@@ -141,7 +135,6 @@ async def save_edit(request: Request, project_id: str):
 
 
 @router.post("/projects/{project_id}/unsubmit")
-async def unsubmit(request: Request, project_id: str):
-    await body(request)
+def unsubmit(request: Request, project_id: str, _: dict = Depends(form_body)):
     domain.unsubmit_project(conn_for(request), actor(request), project_id)
     return redirect(f"/projects/{project_id}", "Moved back to draft. It is hidden from the gallery until you submit again.")

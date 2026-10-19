@@ -29,8 +29,26 @@ def get_event(conn: sqlite3.Connection, event_id: str) -> sqlite3.Row:
     return row
 
 
-def list_events(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM events ORDER BY submissions_close DESC").fetchall()
+def list_events(conn: sqlite3.Connection, *, archived: bool | None = False) -> list[sqlite3.Row]:
+    """Events, latest deadline first. archived=False (the listings) leaves
+    archived events out, True gives only them, None gives everything (for
+    a person's own roles, which an archive must not hide)."""
+    clause = {False: "WHERE archived_at IS NULL", True: "WHERE archived_at IS NOT NULL", None: ""}[archived]
+    return conn.execute(f"SELECT * FROM events {clause} ORDER BY submissions_close DESC").fetchall()
+
+
+def set_archived(conn: sqlite3.Connection, actor: Actor | None, event_id: str, archived: bool) -> None:
+    """Archive an event (a finished one, a rehearsal, a checker's scratch
+    event) or bring it back. Nothing is deleted or frozen: an archived event
+    leaves the home page and the gallery, and its links keep working."""
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        event = get_event(conn, event_id)
+        if bool(event["archived_at"]) == archived:
+            raise Conflict("the event is already archived" if archived else "the event is not archived")
+        conn.execute("UPDATE events SET archived_at = ? WHERE id = ?", (now() if archived else None, event_id))
+        audit.append(conn, "event.archived" if archived else "event.restored", actor_id=actor.id, event_id=event_id,
+                     subject=event_id, ip=actor.ip)
 
 
 def roles(conn: sqlite3.Connection, event_id: str, actor: Actor | None) -> set[str]:
@@ -352,6 +370,18 @@ def criteria(conn: sqlite3.Connection, event_id: str) -> list[dict]:
     )]
 
 
+def _weight(value) -> float:
+    """A rubric weight: a finite number from 0 to 100 (an "inf" would turn
+    every combined score into NaN)."""
+    try:
+        w = float(value)
+    except (TypeError, ValueError) as exc:
+        raise Invalid("weights must be numbers") from exc
+    if not 0 <= w <= 100:   # also refuses NaN and infinity
+        raise Invalid("weights must be between 0 and 100")
+    return w
+
+
 def update_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str, weights: dict[str, float],
                   new_criterion: dict | None = None) -> None:
     """Weights can change at any time before results are published (they are
@@ -370,16 +400,11 @@ def update_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str, 
         for cid, weight in weights.items():
             if cid not in current:
                 raise Invalid("unknown criterion")
-            try:
-                w = float(weight)
-            except (TypeError, ValueError) as exc:
-                raise Invalid("weights must be numbers") from exc
-            if not 0 <= w <= 100:
-                raise Invalid("weights must be between 0 and 100")
+            w = _weight(weight)
             if abs(current[cid]["weight"] - w) > 1e-12:
                 conn.execute("UPDATE criteria SET weight = ? WHERE id = ?", (w, cid))
                 changes[current[cid]["key"]] = {"from": current[cid]["weight"], "to": w}
-        remaining = {cid: float(weights.get(cid, c["weight"])) for cid, c in current.items()}
+        remaining = {cid: _weight(weights.get(cid, c["weight"])) for cid, c in current.items()}
         if current and sum(remaining.values()) <= 0:
             raise Invalid("at least one criterion needs a weight above zero")
         added = None
@@ -394,7 +419,7 @@ def update_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str, 
                 "INSERT INTO criteria(id, event_id, key, name, description, weight, position) VALUES (?,?,?,?,?,?,?)",
                 (new_id("crt"), event_id, key, name,
                  clean_text(new_criterion.get("description"), "criterion description", max_len=300),
-                 float(new_criterion.get("weight") or 1), len(current)),
+                 _weight(new_criterion.get("weight") or 1), len(current)),
             )
             added = key
         if changes or added:

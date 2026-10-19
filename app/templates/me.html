@@ -34,13 +34,26 @@
   <div class="notice" role="status">Copy this token now; it is not shown again.<br><code>{{ new_token }}</code></div>
   {% endif %}
   {% if tokens %}
-  <div class="table-wrap"><table><thead><tr><th>Label</th><th>Created</th><th>Last used</th><th></th></tr></thead>
-  <tbody>{% for t in tokens %}<tr><td>{{ t.label }}</td><td class="nowrap">{{ t.created_at | ts }}</td><td class="nowrap">{{ (t.last_used_at | ts) or 'never' }}</td>
+  <div class="table-wrap"><table><thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+  <tbody>{% for t in tokens %}<tr><td>{{ t.label }}</td><td class="nowrap">{{ t.created_at | ts }}</td><td class="nowrap">{{ (t.last_used_at | ts) or 'never' }}</td><td class="nowrap">{{ (t.expires_at | ts) or 'expired' }}</td>
     <td><form class="inline" method="post" action="/me/tokens/revoke">{{ csrf_field() }}<input type="hidden" name="hint" value="{{ t.hint }}"><button class="link-btn" type="submit">Revoke</button></form></td></tr>{% endfor %}</tbody></table></div>
   {% endif %}
   <form class="row mt-s" method="post" action="/me/tokens">{{ csrf_field() }}
     <label>Label<input type="text" name="label" placeholder="judging script" maxlength="60" required></label>
+    <label>Lasts<select name="days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">a year</option></select></label>
     <button type="submit">Create token</button>
   </form>
+</div>
+<div class="panel">
+  <h2>Password</h2>
+  {% if demo %}<p class="muted">Demo logins are shared by everyone trying the demo, so their passwords cannot be changed here.</p>
+  {% else %}
+  <p class="muted">Changing it ends every other session and every API token of your account.</p>
+  <form class="stack" method="post" action="/me/password">{{ csrf_field() }}
+    <label>Current password<input type="password" name="current" autocomplete="current-password" required></label>
+    <label>New password <span class="hint">At least {{ min_password }} characters; a few words together work well.</span><input type="password" name="password" minlength="{{ min_password }}" maxlength="256" autocomplete="new-password" required></label>
+    <div><button type="submit">Change password</button></div>
+  </form>
+  {% endif %}
 </div>
 {% endblock %}

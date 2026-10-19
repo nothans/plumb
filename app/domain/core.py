@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from .. import audit
 from ..db import new_id, now, transaction, utcnow
@@ -132,23 +132,47 @@ def require_user(actor: Actor | None) -> Actor:
     return actor
 
 
+TOKEN_DAYS = (30, 90, 365)
+
+
 def api_tokens(conn: sqlite3.Connection, actor: Actor | None) -> list[dict]:
     actor = require_user(actor)
     return [dict(r) for r in conn.execute(
-        "SELECT label, created_at, last_used_at, substr(token_hash, 1, 8) AS hint FROM api_tokens WHERE user_id = ? "
-        "ORDER BY created_at DESC", (actor.id,))]
+        "SELECT label, created_at, last_used_at, expires_at, substr(token_hash, 1, 8) AS hint FROM api_tokens "
+        "WHERE user_id = ? ORDER BY created_at DESC", (actor.id,))]
 
 
-def create_api_token(conn: sqlite3.Connection, actor: Actor | None, label: str) -> str:
-    """Returns the token once; only its hash is stored."""
+def create_api_token(conn: sqlite3.Connection, actor: Actor | None, label: str, days: int = 90) -> str:
+    """Returns the token once; only its hash is stored. Every token expires:
+    an admin's token is an admin, and a forgotten one should not stay one."""
     actor = require_user(actor)
     label = clean_text(label, "label", required=True, max_len=60)
+    try:
+        days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise Invalid("days must be a whole number") from exc
+    if days not in TOKEN_DAYS:
+        raise Invalid(f"a token lasts {', '.join(map(str, TOKEN_DAYS[:-1]))} or {TOKEN_DAYS[-1]} days")
     token = "plb_" + new_token()
+    expires = (utcnow() + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with transaction(conn):
-        conn.execute("INSERT INTO api_tokens(token_hash, user_id, label, created_at) VALUES (?,?,?,?)",
-                     (token_hash(token), actor.id, label, now()))
-        audit.append(conn, "api_token.created", actor_id=actor.id, subject=actor.id, detail={"label": label}, ip=actor.ip)
+        conn.execute("INSERT INTO api_tokens(token_hash, user_id, label, created_at, expires_at) VALUES (?,?,?,?,?)",
+                     (token_hash(token), actor.id, label, now(), expires))
+        audit.append(conn, "api_token.created", actor_id=actor.id, subject=actor.id,
+                     detail={"label": label, "expires_at": expires}, ip=actor.ip)
     return token
+
+
+def prune_sessions(conn: sqlite3.Connection) -> int:
+    """Delete expired sessions (run as sessions start and at boot)."""
+    return conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now(),)).rowcount
+
+
+def end_credentials(conn: sqlite3.Connection, user_id: str) -> None:
+    """After a password change or reset: every session and API token of the
+    account ends, so whoever held the old ones is out. Call in a transaction."""
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM api_tokens WHERE user_id = ?", (user_id,))
 
 
 def revoke_api_token(conn: sqlite3.Connection, actor: Actor | None, hint: str) -> None:
@@ -182,7 +206,7 @@ def create_user(
         if existing and (existing["password_hash"] or not allow_claim):
             if existing["password_hash"]:
                 raise Conflict("an account with that email already exists; log in instead")
-            raise Conflict("this email is already registered for an event; ask the organizer for your invitation link")
+            raise Conflict("this email already belongs to an event; ask its organizer for a claim link or an invitation")
         if existing:
             # An account created by an import, claimed through an invitation.
             conn.execute(

@@ -10,6 +10,23 @@
   <p class="small muted mt-s">{{ prog.assigned }} assignments, {{ prog.reviewed }} reviewed. {{ prog.unassigned_projects }} projects have no judge.</p>
 </div>
 
+{% set open_work = judges | selectattr('assigned', 'gt', 0) | list %}
+{% if open_work %}
+<div class="panel">
+  <h2>Open work by judge</h2>
+  <p class="small muted">Automatic assignment counts assignments, not reviews: a judge who has stopped reviewing keeps their projects until you release them here. Releasing never touches a review that was filed.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Judge</th><th class="num">Reviewed</th><th class="num">Open</th><th></th></tr></thead>
+    <tbody>{% for j in open_work %}{% set open = j.assigned - j.reviewed %}<tr>
+      <td>{{ j.name }}</td><td class="num">{{ j.reviewed }}</td><td class="num">{{ open }}</td>
+      <td>{% if open > 0 %}<form method="post" action="/events/{{ event.id }}/manage/assignments/release">{{ csrf_field() }}
+        <input type="hidden" name="judge_id" value="{{ j.id }}">
+        <button type="submit" aria-label="Release the open assignments of {{ j.name }}">Release {{ open }} open</button></form>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+
 <div class="panel">
   <h2>By project</h2>
   <div class="table-wrap">

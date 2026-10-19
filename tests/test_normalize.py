@@ -76,7 +76,8 @@ def test_empty_and_identical_inputs():
 
 def test_p_above_next_is_a_probability_and_ordered():
     rng = np.random.default_rng(3)
-    obs = [Observation(f"j{j}", f"p{p}", 10 * p + rng.normal(0, 1)) for p in range(5) for j in range(3)]
+    # 6 reviews each: 25 residual dof, enough for Plumb to state probabilities (MIN_DOF).
+    obs = [Observation(f"j{j}", f"p{p}", 10 * p + rng.normal(0, 1)) for p in range(5) for j in range(6)]
     f = fit(obs)
     assert [p.project for p in f.projects] == ["p4", "p3", "p2", "p1", "p0"]
     assert all(0.5 < p.p_above_next <= 1 for p in f.projects[:-1])

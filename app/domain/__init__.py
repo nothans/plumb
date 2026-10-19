@@ -28,7 +28,9 @@ from .core import (  # noqa: F401
     clean_url,
     create_api_token,
     create_user,
+    end_credentials,
     get_user,
+    prune_sessions,
     revoke_api_token,
     user_by_email,
 )
@@ -51,6 +53,7 @@ from .events import (  # noqa: F401
     require_user,
     roles,
     rubric_history,
+    set_archived,
     tracks,
     update_event,
     update_rubric,
@@ -66,12 +69,16 @@ from .hooks import (  # noqa: F401
     webhooks_for,
 )
 from .judging import (  # noqa: F401
+    CLAIM_DAYS,
     INVITATION_DAYS,
     accept_invitation,
     assign_manual,
     auto_assign,
+    events_of,
+    get_claim_link,
     get_invitation,
     invite,
+    issue_claim_link,
     judge_queue,
     judge_scores,
     judges,
@@ -79,11 +86,16 @@ from .judging import (  # noqa: F401
     own_review,
     pending_invitations,
     progress,
+    release_open_assignments,
+    remove_judge,
     reviews_for,
     reviews_set_aside,
+    revoke_invitation,
     save_review,
     set_judge_tracks,
     unassign,
+    unclaimed_accounts,
+    use_claim_link,
 )
 from .pairwise_judging import (  # noqa: F401
     pairwise_next,
@@ -107,9 +119,13 @@ from .projects import (  # noqa: F401
     view_project,
 )
 from .results import (  # noqa: F401
+    CLOSE_CALL,
+    award_check,
+    award_groups,
     compute_results,
     default_awards,
     results_for_viewer,
+    shown_percent,
     track_leaders,
 )
 from .teams import (  # noqa: F401

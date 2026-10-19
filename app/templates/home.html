@@ -11,6 +11,7 @@
   <div class="actions"><a class="btn" href="/events/import">Import an event</a><a class="btn primary" href="/events/new">New event</a></div>
   {% endif %}
 </div>
+{% if archived %}<p><a href="/">Back to current events</a></p>{% endif %}
 {% if events %}
 <div class="table-wrap panel">
 <table>
@@ -30,6 +31,7 @@
 </table>
 </div>
 {% else %}
-<div class="empty"><p>No events yet.</p>{% if me and me.is_admin %}<a class="btn primary" href="/events/new">Create the first event</a>{% else %}<p class="muted">An admin creates events. Log in as one to start.</p>{% endif %}</div>
+<div class="empty">{% if archived %}<p>No archived events.</p>{% else %}<p>No events yet.</p>{% if me and me.is_admin %}<a class="btn primary" href="/events/new">Create the first event</a>{% else %}<p class="muted">An admin creates events. Log in as one to start.</p>{% endif %}{% endif %}</div>
 {% endif %}
+{% if archived_count and not archived %}<p class="small muted"><a href="/?archived=1">{{ archived_count }} archived event{{ '' if archived_count == 1 else 's' }}</a></p>{% endif %}
 {% endblock %}

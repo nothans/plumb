@@ -35,8 +35,12 @@ means and its 95% Monte Carlo interval, so a small gap can be told from luck):
   rmse         error of the estimated quality (after centering)
   spearman     rank correlation with the truth
   top5         how many of the true top 5 each method puts in its top 5
-  coverage90   share of projects whose 90% interval contains the truth
-               (plumb only; the others do not give intervals)
+  coverage90   share of projects whose 90% interval contains the truth,
+               once the overall level is lined up (the ranking is relative)
+  stated90     the same with the intervals exactly as stated, level and all,
+               as a certificate prints them (plumb only; the others give none)
+  brier        mean squared error of "beats next" against what happened
+               (0.25 is a coin; lower is better)
 
     python tools/normalization_proof.py [--draws 1000] [--seed 7] [--out docs/normalization-proof.md]
 
@@ -44,6 +48,11 @@ Also checks calibration: across all draws, every adjacent pair in Plumb's
 ranking gets a "beats next" probability; binned, the share of pairs whose
 true order matches should equal the stated probability. Those numbers are
 signed into results and certificates, so they must mean what they say.
+
+Part 3 runs the same calibration check on small events (10 to 40
+projects, 2 or 3 reviews each, random balanced designs) to find where the
+probabilities stop being trustworthy: the basis of the "few reviews" note
+(app/normalize.py MIN_DOF).
 
 Writes a Markdown report; JUDGING.md quotes it, and tests/test_proof.py
 re-runs a small version to keep the headline ordering honest.
@@ -71,7 +80,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 
 from app import pairwise  # noqa: E402
-from app.normalize import Observation, combine, fit, raw_means, zscore_means  # noqa: E402
+from app.normalize import MIN_DOF, Observation, combine, fit, raw_means, zscore_means  # noqa: E402
 
 
 def judge_spread(scores, lean=None) -> float:
@@ -122,10 +131,15 @@ def fixture_section(fx: dict) -> str:
                      f"{p.raw_mean:.1f} | {p.adjusted:.1f} | {p.low:.1f} to {p.high:.1f} | "
                      f"{'' if p.p_above_next is None else f'{p.p_above_next:.0%}'} |")
     moved = sum(1 for p in f.projects if p.rank != p.raw_rank)
+    beats = [p.p_above_next for p in f.projects if p.p_above_next is not None]
+    sp = f.spread_summary
     lines += ["", f"{moved} of {len(f.projects)} projects change rank, by at most "
-                  f"{max(abs(p.rank - p.raw_rank) for p in f.projects)} places. Every \"beats next\" is 50%: once "
-                  "judge lean is removed, the reviews show no detectable true difference between projects, and the "
-                  "calibration check in Part 2 is what makes that 50% trustworthy.", ""]
+                  f"{max(abs(p.rank - p.raw_rank) for p in f.projects)} places. The true spread between projects is "
+                  f"estimated at {sp['estimate']:.1f} points (90% range {sp['low90']:.1f} to {sp['high90']:.1f}) "
+                  f"against review noise of {f.noise_sd:.1f}"
+                  f"{', and zero cannot be ruled out' if sp['zero_plausible'] else ''}, so every \"beats next\" "
+                  f"is between {min(beats):.0%} and {max(beats):.0%}: ties and leanings at best. The calibration "
+                  "check in Part 2 is what makes those numbers trustworthy.", ""]
     return "\n".join(lines) + "\n"
 
 
@@ -186,7 +200,7 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
     out = {}
     for scenario in scenarios:
         acc = {m: {"rmse": [], "spearman": [], "top5": []} for m in METHODS}
-        coverage = []
+        coverage, stated = [], []
         calib = []  # (stated P(beats next), 1 if the true order agrees)
         for _ in range(draws):
             projects, truth, obs = simulate(pairs, track_of, rng, scenario)
@@ -214,6 +228,9 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
                     calib.append((upper.p_above_next, float(truth[upper.project] > truth[lower.project])))
             shift = np.mean([r.adjusted for r in f.projects]) - t.mean()
             coverage.append(np.mean([r.low - shift <= truth[r.project] <= r.high - shift for r in f.projects]))
+            # As printed: the planted truth is centred on 50 like the scores, so
+            # the stated level can be checked too, not only the relative one.
+            stated.append(np.mean([r.low <= truth[r.project] <= r.high for r in f.projects]))
         res = {}
         raw_sp = np.array(acc["raw"]["spearman"])
         for m, d in acc.items():
@@ -222,7 +239,9 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
             res[m]["vs_raw"] = float(diff.mean())
             res[m]["vs_raw_ci"] = float(1.96 * diff.std(ddof=1) / np.sqrt(len(diff))) if len(diff) > 1 else 0.0
         res["plumb"]["coverage90"] = float(np.mean(coverage))
+        res["plumb"]["stated90"] = float(np.mean(stated))
         cal = np.array(calib)
+        res["brier"] = float(np.mean((cal[:, 0] - cal[:, 1]) ** 2)) if len(cal) else None
         res["calibration"] = []
         for lo, hi in BINS:
             sel = cal[(cal[:, 0] >= lo) & (cal[:, 0] < hi)] if len(cal) else cal
@@ -241,17 +260,20 @@ def report(res: dict, draws: int, seed: int) -> str:
         "(122 reviews, 40 projects, 30 judges, the duplicate's reviews left out; "
         "true project sd 12, judge lean sd 8, noise sd 10).",
         "",
-        "| scenario | method | rmse | spearman | vs raw (95% MC interval) | true top 5 found | 90% coverage |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| scenario | method | rmse | spearman | vs raw (95% MC interval) | true top 5 found | 90% coverage | as stated |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for scenario, methods in res.items():
         for m, r in methods.items():
-            if m == "calibration":
+            if m in ("calibration", "brier"):
                 continue
             cov = f"{r['coverage90']:.0%}" if "coverage90" in r else ""
+            st = f"{r['stated90']:.0%}" if "stated90" in r else ""
             vs = "" if m == "raw" else f"{r['vs_raw']:+.3f} (±{r['vs_raw_ci']:.3f})"
-            lines.append(f"| {scenario} | {m} | {r['rmse']:.2f} | {r['spearman']:.3f} | {vs} | {r['top5']:.2f} | {cov} |")
-    lines += ["", "Calibration of \"beats next\": stated probability against how often the true order agreed.", "",
+            lines.append(f"| {scenario} | {m} | {r['rmse']:.2f} | {r['spearman']:.3f} | {vs} | {r['top5']:.2f} | {cov} | {st} |")
+    briers = ", ".join(f"{s} {m['brier']:.3f}" for s, m in res.items() if m["brier"] is not None)
+    lines += ["", "Calibration of \"beats next\": stated probability against how often the true order agreed. "
+              f"Brier score per scenario (0.25 is a coin, lower is better): {briers}.", "",
               "| scenario | bin | pairs | stated | observed |", "|---|---|---:|---:|---:|"]
     for scenario, methods in res.items():
         for c in methods["calibration"]:
@@ -259,19 +281,78 @@ def report(res: dict, draws: int, seed: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Part 3: small events. Random balanced designs (each project reviewed by
+# `reviews` distinct judges), judge lean sd 4.3 and noise sd 15.9 as in the
+# fixture, true spread from fixture-like (4) to clearly separated (16).
+SMALL = [(10, 5, 2), (15, 6, 3), (25, 8, 2), (40, 10, 3)]
+SPREADS = (4.0, 8.0, 16.0)
+SMALL_BINS = [(0.6, 0.75), (0.75, 0.9), (0.9, 1.0001)]
+
+
+def small_events(draws: int, seed: int, designs=SMALL, spreads=SPREADS) -> list[dict]:
+    rng = np.random.default_rng(seed)
+    rows = []
+    for P, J, r in designs:
+        for q_sd in spreads:
+            calib, flagged, dof = [], [], 0
+            for _ in range(draws):
+                truth = rng.normal(50, q_sd, P)
+                lean = rng.normal(0, 4.3, J)
+                obs = [Observation(f"j{j}", f"p{p}", truth[p] + lean[j] + rng.normal(0, 15.9))
+                       for p in range(P) for j in rng.choice(J, r, replace=False)]
+                f = fit(obs)
+                dof = f.dof
+                flagged.append(f.few_reviews)
+                for upper, lower in zip(f.projects, f.projects[1:]):
+                    # Forced: below MIN_DOF the portal withholds these, and this is the evidence why.
+                    p = f.p_better(upper.project, lower.project, force=True)
+                    if p is not None:
+                        calib.append((p, float(truth[int(upper.project[1:])] > truth[int(lower.project[1:])])))
+            cal = np.array(calib)
+            bins = []
+            for lo, hi in SMALL_BINS:
+                sel = cal[(cal[:, 0] >= lo) & (cal[:, 0] < hi)]
+                bins.append({"bin": f"{lo:.0%}-{min(hi, 1):.0%}", "n": int(len(sel)),
+                             "stated": float(sel[:, 0].mean()) if len(sel) else None,
+                             "observed": float(sel[:, 1].mean()) if len(sel) else None})
+            rows.append({"design": f"{P} projects, {r} reviews", "dof": dof, "spread": q_sd,
+                         "few_reviews": float(np.mean(flagged)), "brier": float(np.mean((cal[:, 0] - cal[:, 1]) ** 2)),
+                         "bins": bins})
+    return rows
+
+
+def small_report(rows: list[dict], draws: int, seed: int) -> str:
+    lines = ["## Part 3: small events", "",
+             f"{draws} draws per row, seed {seed}. Random balanced designs, judge lean sd 4.3, review noise sd 15.9 "
+             "(as in the fixture), true spread between projects 4 (fixture-like), 8 or 16. Each cell is stated → "
+             f"observed (pairs). Below {MIN_DOF} residual degrees of freedom the portal states no probabilities; "
+             "they are computed here anyway to show why.", "",
+             "| design | dof | spread | withheld | brier | 60-75% | 75-90% | 90%+ |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in rows:
+        cells = [f"{b['stated']:.2f} → {b['observed']:.2f} ({b['n']})" if b["n"] else "none stated" for b in r["bins"]]
+        lines.append(f"| {r['design']} | {r['dof']} | {r['spread']:.0f} | {r['few_reviews']:.0%} | {r['brier']:.3f} | "
+                     + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--draws", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--small-draws", type=int, default=300)
     ap.add_argument("--out", default=None, help="also write the report to this file")
     args = ap.parse_args()
-    text = fixture_section(fixture()) + "\n" + report(evaluate(args.draws, args.seed), args.draws, args.seed)
+    sys.stdout.reconfigure(encoding="utf-8")  # the report has arrows; a Windows console defaults to cp1252
+    text = (fixture_section(fixture()) + "\n" + report(evaluate(args.draws, args.seed), args.draws, args.seed) + "\n"
+            + small_report(small_events(args.small_draws, args.seed), args.small_draws, args.seed))
     print(text)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text("# Normalization proof: output\n\nGenerated by `python tools/normalization_proof.py "
-                                  f"--draws {args.draws} --seed {args.seed} --out {args.out}`.\n\n" + text,
-                                  encoding="utf-8")
+                                  f"--draws {args.draws} --seed {args.seed} --small-draws {args.small_draws} "
+                                  f"--out {args.out}`.\n\n" + text,
+                                  encoding="utf-8", newline="\n")
     return 0
 
 

@@ -2,7 +2,6 @@
 
 import json
 import re
-from collections import defaultdict
 
 from app.normalize import Observation, combine, fit
 
@@ -34,14 +33,21 @@ def test_section_6_figures_match_the_fixture_fit():
     }
     for text, ok in quoted.items():
         assert ok and text in JUDGING, text
-    assert f.spread_sd < 0.5 and "no detectable true spread" in JUDGING
+    sp = f.spread_summary
+    assert sp["zero_plausible"] and f"spread between projects of about {sp['estimate']:.1f} points, anywhere from "         f"{sp['low90']:.0f} to {sp['high90']:.1f} (90%)" in JUDGING
     assert f"{min(half):.1f} to {max(half):.0f} points wide" in JUDGING
-    tracks = {p["id"]: p["track"] for p in d["projects"]}
-    groups = defaultdict(list)
-    for p in f.projects:
-        groups[tracks[p.project]].append(p.project)
-    assert all(abs(f.p_better(v[0], v[1]) - 0.5) < 0.01 for v in groups.values() if len(v) > 1)
-    assert all(abs(p.p_above_next - 0.5) < 0.01 for p in f.projects[:-1])
+    beats = [p.p_above_next for p in f.projects if p.p_above_next is not None]
+    assert f"each \"beats next\" is between {min(beats):.0%} and {max(beats):.0%}" in JUDGING
+    assert f"(81 degrees of freedom) the multiplier is {f.projects[0].q90:.2f}" in JUDGING and f.dof == 81
+    assert "three of the replay event's four prizes are close calls" in JUDGING
+
+
+def test_the_replay_prizes_are_the_close_calls_the_docs_describe(db):
+    from app import domain
+    suggested = domain.default_awards(db, "evt_replay", domain.compute_results(db, "evt_replay"))
+    assert len(suggested) == 4 and [s["close_call"] for s in suggested].count(True) == 3
+    record = db.execute("SELECT payload FROM records WHERE event_id = 'evt_replay' AND kind = 'results'").fetchone()[0]
+    assert sum(1 for a in json.loads(record)["awards"] if a["close_call"] and a["reason"]) == 3
 
 
 def test_the_organizers_sigma_is_reproduced():

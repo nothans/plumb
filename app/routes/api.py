@@ -8,7 +8,7 @@ The machine-readable spec is served at /api/openapi.json and described at
 
 from __future__ import annotations
 
-import json
+import math
 import sqlite3
 from typing import Any, Literal
 
@@ -17,8 +17,8 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
-from .. import audit, domain, ratelimit, records, transfer
-from ..web import actor, base_url, conn_for, render, same_origin, signing_base_url
+from .. import audit, domain, ratelimit, records, transfer, webhooks
+from ..web import actor, base_url, conn_for, json_document, render, same_origin, signing_base_url
 from ..webhooks import check_destination
 
 router = APIRouter(dependencies=[Security(HTTPBearer(auto_error=False))])
@@ -218,6 +218,7 @@ class ComparisonIn(BaseModel):
 
 class TokenIn(BaseModel):
     label: str
+    days: Literal[30, 90, 365] = Field(90, description="how long the token lasts")
 
 
 class WebhookIn(BaseModel):
@@ -237,8 +238,12 @@ class EnvelopeIn(BaseModel):
 def judge_scores(request: Request, judge: str | None = None, event: str | None = None):
     """A judge's own reviews. Asking for another judge's (?judge=ID) needs
     organizer rights on that judge's events; a judge gets 403."""
-    rows = domain.judge_scores(conn_for(request), actor(request), judge_id=judge, event_id=event)
-    return {"judge": judge or actor(request).id, "reviews": [
+    conn = conn_for(request)
+    rows = domain.judge_scores(conn, actor(request), judge_id=judge, event_id=event)
+    target = judge or actor(request).id
+    # The salt that makes the signed record's review digest recomputable by this judge alone.
+    salts = {e: records.review_salt(conn, e, target) for e in sorted({r["event_id"] for r in rows})}
+    return {"judge": target, "digest_salts": {e: s for e, s in salts.items() if s}, "reviews": [
         {"id": r["id"], "event_id": r["event_id"], "project_id": r["project_id"], "project_title": r["project_title"],
          "values": r["values"], "comment": r["comment"], "submitted_at": r["submitted_at"], "updated_at": r["updated_at"]}
         for r in rows]}
@@ -248,9 +253,22 @@ def judge_scores(request: Request, judge: str | None = None, event: str | None =
 
 
 @v1.get("/events")
-def list_events(request: Request):
+def list_events(request: Request, archived: bool = False):
+    """Events, latest deadline first. Archived events are listed only with ?archived=true."""
     conn = conn_for(request)
-    return [_event(conn, e) for e in domain.list_events(conn)]
+    return [_event(conn, e) for e in domain.list_events(conn, archived=archived)]
+
+
+@v1.post("/events/{event_id}/archive", status_code=204)
+def archive_event(request: Request, event_id: str):
+    """Take the event off the listings and the gallery. Nothing is deleted; its links keep working."""
+    domain.set_archived(conn_for(request), actor(request), event_id, True)
+
+
+@v1.delete("/events/{event_id}/archive", status_code=204)
+def restore_event(request: Request, event_id: str):
+    """Bring an archived event back to the listings."""
+    domain.set_archived(conn_for(request), actor(request), event_id, False)
 
 
 @v1.post("/events", status_code=201)
@@ -277,15 +295,11 @@ def update_event(request: Request, event_id: str, data: EventIn):
 
 
 @v1.post("/events/import", status_code=201)
-async def import_event(request: Request):
+def import_event(request: Request, doc: Any = Depends(json_document)):
     """Body: a fixture-shaped event document (the format GET .../export returns)."""
     me = domain.require_user(actor(request))
     if not me.is_admin:
         raise domain.Forbidden("only admins can import events")
-    try:
-        doc = await request.json()
-    except ValueError as exc:
-        raise domain.Invalid("the body is not JSON") from exc
     return transfer.import_event(conn_for(request), doc, actor_id=me.id, organizer_ids=[me.id])
 
 
@@ -303,7 +317,7 @@ def me(request: Request):
     conn = conn_for(request)
     a = domain.require_user(actor(request))
     return {"id": a.id, "email": a.email, "name": a.name, "is_admin": a.is_admin,
-            "events": {e["id"]: sorted(domain.roles(conn, e["id"], a)) for e in domain.list_events(conn)
+            "events": {e["id"]: sorted(domain.roles(conn, e["id"], a)) for e in domain.list_events(conn, archived=None)
                        if domain.roles(conn, e["id"], a) - {"admin"}}}
 
 
@@ -316,7 +330,7 @@ def list_tokens(request: Request):
 @v1.post("/me/tokens", status_code=201)
 def create_token(request: Request, data: TokenIn):
     """Create an API token for the caller. The token is returned once."""
-    return {"token": domain.create_api_token(conn_for(request), actor(request), data.label)}
+    return {"token": domain.create_api_token(conn_for(request), actor(request), data.label, data.days)}
 
 
 @v1.delete("/me/tokens/{hint}", status_code=204)
@@ -582,17 +596,27 @@ def lock_rubric(request: Request, event_id: str):
     return Response(status_code=204)
 
 
+def _num(value):
+    """JSON has no NaN or infinity: a number the model cannot give yet is null."""
+    return value if value is None or math.isfinite(value) else None
+
+
 @v1.get("/events/{event_id}/results", response_model=ResultsOut)
 def results(request: Request, event_id: str):
+    """The ranking with 90% intervals. Organizers see it live; after publication everyone sees it, read from the
+    signed record. A number the reviews cannot support yet (an interval before there are more reviews than
+    projects) is null."""
     res = domain.results_for_viewer(conn_for(request), actor(request), event_id)
     fit = res["fit"]
     return {
-        "method": {"judge_sd": fit.judge_sd, "noise_sd": fit.noise_sd, "spread_sd": fit.spread_sd,
-                   "observations": fit.n_observations, "graph_components": fit.components},
+        "method": {"judge_sd": _num(fit.judge_sd), "noise_sd": _num(fit.noise_sd), "spread_sd": _num(fit.spread_sd),
+                   "spread": fit.spread_summary, "dof": fit.dof, "observations": fit.n_observations,
+                   "graph_components": fit.components, "published": bool(res.get("record"))},
         "ranking": [{"rank": p.rank, "project_id": p.project, "title": res["projects"][p.project]["title"],
                      "reviews": p.n_reviews, "raw_mean": p.raw_mean, "raw_rank": p.raw_rank, "adjusted": p.adjusted,
-                     "interval90": [p.low, p.high], "p_beats_next": p.p_above_next} for p in fit.projects],
-        "judges": [{"judge_id": j.judge, "reviews": j.n_reviews, "leniency": j.leniency, "sd": j.sd, "flags": j.flags}
+                     "interval90": None if p.low is None else [_num(p.low), _num(p.high)],
+                     "p_beats_next": p.p_above_next} for p in fit.projects],
+        "judges": [{"judge_id": j.judge, "reviews": j.n_reviews, "leniency": j.leniency, "sd": _num(j.sd), "flags": j.flags}
                    for j in fit.judges] if domain.is_organizer(conn_for(request), event_id, actor(request)) else None,
         "excluded_reviews": res["excluded"],
         "unreviewed_projects": [p["id"] for p in res["unreviewed"]],
@@ -602,24 +626,29 @@ def results(request: Request, event_id: str):
 class PublishIn(BaseModel):
     awards: dict[str, str] | None = Field(None, description="prize id -> project id; omitted prizes get the suggested "
                                                             "winner, an empty string leaves a prize unawarded")
+    reasons: dict[str, str] | None = Field(None, description="prize id -> the organizers' reason for the award; required "
+                                                             "for a close call, signed into the record")
 
 
 @v1.post("/events/{event_id}/publish", response_model=PublishOut)
 def publish(request: Request, event_id: str, data: PublishIn | None = None):
     """Sign and freeze the results, award prizes, issue judge records and team certificates. Final."""
     return records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
-                                   signing_base_url(request), (data.awards if data else None))
+                                   signing_base_url(request), (data.awards if data else None),
+                                   (data.reasons if data else None))
 
 
 @v1.get("/events/{event_id}/awards/suggested")
 def suggested_awards(request: Request, event_id: str):
     """The winner Plumb would pick for each prize, with how sure the model is."""
     conn = conn_for(request)
-    res = domain.results_for_viewer(conn, actor(request), event_id)
     domain.require_organizer(conn, event_id, actor(request))
+    res = domain.compute_results(conn, event_id)
+    if not res["fit"].identifiable:
+        return []
     return [{"prize_id": s["prize"]["id"], "prize": s["prize"]["name"], "project_id": s["project"],
-             "runner_up": s["runner_up"], "p_beats_runner_up": s["p"]}
-            for s in domain.default_awards(conn, event_id, res["fit"], res["projects"])]
+             "runner_up": s["runner_up"], "p_beats_runner_up": s["p"], "close_call": s["close_call"]}
+            for s in domain.default_awards(conn, event_id, res)]
 
 
 @v1.get("/events/{event_id}/records")
@@ -671,9 +700,7 @@ def abuse(request: Request, event_id: str):
 def audit_log(request: Request, event_id: str, before: int | None = None, action: str | None = None, limit: int = 200):
     conn = conn_for(request)
     rows = domain.audit_entries(conn, actor(request), event_id, before=before, action=action, limit=max(1, min(limit, 1000)))
-    return {"chain": audit.verify_chain(conn), "entries": [
-        {**{k: r[k] for k in ("seq", "at", "actor_id", "action", "subject", "prev_hash", "hash")},
-         "detail": json.loads(r["detail"])} for r in rows]}
+    return {"chain": audit.verify_chain(conn, full=False), "entries": [webhooks.payload(r) for r in rows]}
 
 
 # --- webhooks ------------------------------------------------------------------------------------------------

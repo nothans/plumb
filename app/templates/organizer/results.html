@@ -56,7 +56,8 @@
     {% if phase.voting in ('open', 'upcoming') %}<li><strong>The community vote runs until {{ event.voting_close | ts }}</strong>; publishing is refused until it closes, so judged results cannot sway it.</li>{% endif %}
     {% for d in open_duplicates %}<li>Duplicate submission <a href="/events/{{ event.id }}/manage/integrity">{{ d.first.title }}</a> was resolved automatically (the later entry counts); confirm or swap it before publishing, since publishing freezes it.</li>{% endfor %}
     {% if short %}<li>{{ short }} eligible project{{ '' if short == 1 else 's' }} ha{{ 's' if short == 1 else 've' }} no reviews and will not be ranked.</li>{% endif %}
-    {% if fit.identifiable and fit.spread_sd < fit.noise_sd / 3 %}<li>The reviews barely separate the projects; the certificates will carry each team's interval.</li>{% endif %}
+    {% if fit.few_reviews %}<li>Only {{ fit.dof }} reviews beyond one per project, so no probabilities are stated and every prize counts as a close call that needs a reason. {{ min_dof - fit.dof }} more reviews would change that.</li>{% endif %}
+    {% if fit.barely_separated %}<li>The reviews barely separate the projects; the certificates will carry each team's interval.</li>{% endif %}
     {% if not fit.identifiable %}<li><strong>Too few reviews to estimate uncertainty;</strong> publishing is refused until projects have more reviews.</li>{% endif %}
     <li>{{ fit.n_observations }} reviews from {{ fit.judges | length }} judges will be used.</li>
   </ul>
@@ -66,7 +67,7 @@
       <legend>Prizes</legend>
       <p class="small muted">Suggested: each track prize to the track leader, overall prizes down the overall ranking. Change any of them; the signed record notes when a prize went past a higher-ranked project.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Prize</th><th>Winner</th><th class="num">Sure it beats the runner-up</th></tr></thead>
+        <thead><tr><th>Prize</th><th>Winner</th><th class="num">Sure it beats the runner-up</th><th>Reason <span class="hint">required for a close call</span></th></tr></thead>
         <tbody>{% for s in suggestions %}{% set pool = leaders.get(s.prize.track_id or none, {}).get('ranked', []) %}
           <tr>
             <td><strong>{{ s.prize.name }}</strong>{% if s.prize.track_name %}<br><span class="small muted">{{ s.prize.track_name }}</span>{% endif %}</td>
@@ -76,8 +77,11 @@
                 {% for pid in pool %}<option value="{{ pid }}" {% if pid == s.project %}selected{% endif %}>{{ res.projects[pid].title }} (#{{ fit.project(pid).rank }})</option>{% endfor %}
               </select></label></td>
             <td class="num">{{ certainty(s.p) }}</td>
+            <td><label><span class="vh">Reason for {{ s.prize.name }}</span>
+              <textarea name="reason_{{ s.prize.id }}" rows="2" maxlength="500" placeholder="{{ 'Close call: why this project' if s.close_call else 'Optional' }}"></textarea></label></td>
           </tr>{% endfor %}</tbody>
       </table></div>
+      <p class="small muted">A <strong>close call</strong> is a prize the winner takes with under 60% certainty over the best other candidate (a <em>tie</em>). Publishing asks for a reason for each close call, such as a judging-room discussion or a shared prize, and signs it into the record. Choosing a different winner changes the check; publishing runs it again.</p>
     </fieldset>
     {% endif %}
     {% set blocked = phase.voting in ('open', 'upcoming') or not fit.identifiable %}
@@ -118,7 +122,7 @@
     <tbody>{% for j in fit.judges %}<tr>
       <td><a href="/events/{{ event.id }}/manage/reviews?judge={{ j.judge }}">{{ res.names[j.judge] }}</a></td>
       <td class="num">{{ j.n_reviews }}</td><td class="num">{{ j.raw_mean | num }}</td>
-      <td class="num">{{ '%+.1f' | format(j.leniency) }}</td><td class="num">{{ j.sd | num }}</td>
+      <td class="num">{{ '%+.1f' | format(j.leniency) }}</td><td class="num">{{ j.sd | num if j.sd is not none else '&mdash;' | safe }}</td>
       <td>{% for f in j.flags %}<span class="tag {{ 'warn' if f == 'flat' }}">{{ {'flat': 'same score for everything', 'few-reviews': 'few reviews', 'harsh': 'harsh', 'generous': 'generous'}[f] }}</span> {% endfor %}</td>
     </tr>{% endfor %}</tbody>
   </table>

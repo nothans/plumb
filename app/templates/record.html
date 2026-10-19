@@ -15,7 +15,7 @@
 <div class="panel">
   <p><strong>{{ body.judge.name }}</strong> judged {{ event.name }} and filed <strong>{{ body.reviews }}</strong> reviews.</p>
   <p class="small">Review digest <span class="hash">{{ body.review_digest }}</span></p>
-  <p class="muted small">The digest is a SHA-256 over the judge's own reviews (project, scores, comment, last edit). The judge can recompute it from their score export to confirm the portal recorded exactly what they submitted, without anyone else seeing the scores.</p>
+  <p class="muted small">The digest is a SHA-256 over the judge's own reviews (project, scores, comment, last edit){% if body.review_digest_method %}, mixed with a random salt that only the judge receives, in their score export{% endif %}. The judge can recompute it to confirm the portal recorded exactly what they submitted, and nobody else can work the scores out from it.</p>
 </div>
 {% else %}
 <div class="panel">

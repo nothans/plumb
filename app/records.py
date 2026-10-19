@@ -22,25 +22,35 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import sqlite3
 from types import SimpleNamespace
 
-from . import audit, canonical, domain
+from . import audit, canonical, domain, normalize
 from .db import new_id, now, transaction
 from .signing import Signer, verify
 
 
-def _review_digest(reviews: list[dict]) -> str:
+def _review_digest(reviews: list[dict], salt: str | None = None) -> str:
+    """sha256 over the judge's reviews in canonical JSON, prefixed with
+    "<salt>:" when the record is salted (every record since v1.1)."""
     items = sorted(
         ({"project": r["project_id"], "values": r["values"], "comment": r["comment"], "updated_at": r["updated_at"]}
          for r in reviews),
         key=lambda x: x["project"],
     )
-    return hashlib.sha256(canonical.dumps(items).encode()).hexdigest()
+    text = canonical.dumps(items)
+    return hashlib.sha256(((salt + ":") if salt else "").encode() + text.encode()).hexdigest()
+
+
+def review_salt(conn: sqlite3.Connection, event_id: str, judge_id: str) -> str | None:
+    row = conn.execute("SELECT salt FROM review_salts WHERE event_id = ? AND judge_id = ?", (event_id, judge_id)).fetchone()
+    return row["salt"] if row else None
 
 
 def review_digest_for(conn: sqlite3.Connection, event_id: str, judge_id: str) -> str:
-    return _review_digest(domain.reviews_for(conn, event_id=event_id, judge_id=judge_id))
+    return _review_digest(domain.reviews_for(conn, event_id=event_id, judge_id=judge_id),
+                          review_salt(conn, event_id, judge_id))
 
 
 def _issue(conn: sqlite3.Connection, signer: Signer, event_id: str, kind: str, subject: str, body: dict,
@@ -62,10 +72,13 @@ def _issue(conn: sqlite3.Connection, signer: Signer, event_id: str, kind: str, s
 
 
 def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_id: str, signer: Signer,
-                    base_url: str, awards: dict[str, str] | None = None) -> dict:
+                    base_url: str, awards: dict[str, str] | None = None,
+                    reasons: dict[str, str] | None = None) -> dict:
     """Sign and freeze the results. awards maps prize id to project id; a
     prize left out gets the suggested default, and an empty string means
-    "not awarded"."""
+    "not awarded". reasons maps prize id to the organizers' reason for the
+    award, required for a close call (see domain.award_check) and signed
+    into the record with it."""
     actor = domain.require_organizer(conn, event_id, actor)
     with transaction(conn):
         event = domain.get_event(conn, event_id)
@@ -87,14 +100,11 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             raise domain.Conflict("there are not enough reviews to estimate how uncertain the ranking is "
                                   "(the event needs more reviews than projects); assign more judges first")
         ranked = {p.project for p in fit.projects}
-        chosen = []
+        chosen, close_calls = [], []
         overall_taken: set[str] = set()
-        for suggestion in domain.default_awards(conn, event_id, fit, res["projects"]):
-            prize = suggestion["prize"]
-            if prize["track_id"]:
-                top = suggestion["project"]
-            else:
-                top = next((p.project for p in fit.projects if p.project not in overall_taken), None)
+        for prize in domain.prizes(conn, event_id):
+            group = domain.award_groups(fit, res["projects"], prize, overall_taken)
+            top = group[0] if group else None
             pick = (awards or {}).get(prize["id"], top)
             if pick and not prize["track_id"] and pick in overall_taken:
                 raise domain.Invalid(f"{res['projects'][pick]['title']} already won an overall prize")
@@ -107,17 +117,22 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             # The closest rival is the best other project this prize could
             # have gone to: for a track prize, anyone in the track; for an
             # overall prize, anyone who has not already won an overall prize.
-            if prize["track_id"]:
-                group = [p.project for p in fit.projects if res["projects"][p.project]["track_id"] == prize["track_id"]]
-            else:
-                group = [p.project for p in fit.projects if p.project not in overall_taken]
+            if not prize["track_id"]:
                 overall_taken.add(pick)
-            rival = next((p for p in group if p != pick), None)
+            check = domain.award_check(fit, pick, group)
+            reason = domain.clean_text((reasons or {}).get(prize["id"], ""), f"reason for {prize['name']}", max_len=500)
+            if check["close_call"] and not reason:
+                close_calls.append(prize["name"])
             chosen.append({"prize": prize["id"], "name": prize["name"], "track": prize["track_id"], "project": pick,
                            "title": res["projects"][pick]["title"], "team": res["projects"][pick]["team_id"],
-                           "rank": fit.project(pick).rank, "rival": rival,
-                           "p_beats_rival": None if rival is None else round(fit.p_better(pick, rival), 4),
-                           "suggested": top, "overrode_suggestion": pick != top})
+                           "rank": fit.project(pick).rank, "rival": check["rival"],
+                           "p_beats_rival": None if check["p"] is None else round(check["p"], 4),
+                           "close_call": check["close_call"], "reason": reason or None, "suggested": top, "overrode_suggestion": pick != top})
+        if close_calls:
+            raise domain.Invalid(
+                f"{', '.join(close_calls)}: {'this is a close call' if len(close_calls) == 1 else 'these are close calls'} "
+                "(under 60% sure the winner truly beats the best other candidate); "
+                "give a reason for each, and it is signed into the record")
         head = audit.head(conn)
         ev = {"id": event["id"], "name": event["name"]}
         ranking = []
@@ -134,8 +149,12 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             "event": ev,
             "method": {
                 "model": "score = quality[project] + leniency[judge] + noise; projects fixed, judges random; REML",
+                "intervals": "90%, Student's t with the residual degrees of freedom",
+                "probabilities": "averaged over the likelihood of the judge-to-noise ratio and of the spread "
+                                 "of true quality; Student's t for the review noise; not stated below "
+                                 f"{normalize.MIN_DOF} residual degrees of freedom",
                 "judge_sd": round(fit.judge_sd, 4), "noise_sd": round(fit.noise_sd, 4),
-                "spread_sd": round(fit.spread_sd, 4),
+                "spread_sd": round(fit.spread_sd, 4), "spread": fit.spread_summary, "dof": fit.dof,
                 "observations": fit.n_observations, "graph_components": fit.components,
             },
             "rubric": [{"key": c["key"], "weight": c["weight"], "min": c["min_value"], "max": c["max_value"]}
@@ -153,11 +172,15 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             reviews = domain.reviews_for(conn, event_id=event_id, judge_id=j["id"])
             if not reviews:
                 continue
+            salt = secrets.token_hex(16)
+            conn.execute("INSERT INTO review_salts(event_id, judge_id, salt) VALUES (?,?,?)", (event_id, j["id"], salt))
             _issue(conn, signer, event_id, "judge", j["id"], {
                 "event": ev,
                 "judge": {"id": j["id"], "name": j["name"]},
                 "reviews": len(reviews),
-                "review_digest": _review_digest(reviews),
+                "review_digest": _review_digest(reviews, salt),
+                "review_digest_method": "sha256 of '<salt>:' + canonical JSON of the reviews; the salt is in the "
+                                        "judge's own score export",
                 "results_record": results_id,
                 "audit_head": head,
             }, base_url)
@@ -219,9 +242,14 @@ def published_results(conn: sqlite3.Connection, event_id: str) -> dict | None:
             project=r["project"], rank=r["rank"], raw_rank=r.get("raw_rank", r["rank"]), n_reviews=r["reviews"],
             raw_mean=r["raw_mean"], adjusted=r["adjusted"], low=low, high=high, p_above_next=r.get("p_beats_next"),
         ))
+    spread = m.get("spread")
     fit = SimpleNamespace(
         projects=projects, n_observations=m["observations"], judge_sd=m["judge_sd"], noise_sd=m["noise_sd"],
-        spread_sd=m.get("spread_sd", 0.0), components=m["graph_components"], identifiable=True,
+        spread_sd=m.get("spread_sd", 0.0), spread_summary=spread, dof=m.get("dof"),
+        # Records signed before v1.1 carry only the moment estimate of the spread.
+        barely_separated=spread["zero_plausible"] if spread else m.get("spread_sd", 0.0) < m["noise_sd"] / 3,
+        few_reviews=m.get("dof") is not None and m["dof"] < normalize.MIN_DOF,
+        components=m["graph_components"], identifiable=True,
     )
     live = {r["id"]: r for r in conn.execute(
         f"SELECT {domain.PROJECT_COLUMNS} {domain.PROJECT_FROM} WHERE p.event_id = ?", (event_id,)
@@ -248,25 +276,35 @@ def records_for(conn: sqlite3.Connection, event_id: str, kind: str | None = None
 
 def envelope(row: sqlite3.Row, signer: Signer) -> dict:
     """The portable form: everything needed to verify, in one object."""
+    found = signer.public_key_for(row["key_id"])
     return {"payload": row["payload"], "signature": row["signature"], "key_id": row["key_id"],
-            "public_key": signer.public_key_b64 if row["key_id"] == signer.key_id else None}
+            "public_key": found[0] if found else None}
 
 
 def check_envelope(env: dict, signer: Signer) -> dict:
-    """Verify a pasted envelope against this portal's key.
+    """Verify a pasted envelope against this portal's keys.
 
-    Uses this portal's published key, never a key inside the envelope: a
-    forger can always sign with a key of their own.
+    Uses this portal's published keys (the current one and any it has
+    retired), never a key inside the envelope: a forger can always sign with
+    a key of their own.
     """
     payload, signature = env.get("payload"), env.get("signature")
     if not isinstance(payload, str) or not isinstance(signature, str):
         return {"ok": False, "reason": "the envelope needs a payload string and a signature"}
-    if env.get("key_id") and env["key_id"] != signer.key_id:
-        return {"ok": False, "reason": f"signed by key {env['key_id']}, but this portal's key is {signer.key_id}"}
-    if not verify(payload, signature, signer.public_key_b64):
+    key_id = env.get("key_id") or signer.key_id
+    found = signer.public_key_for(key_id)
+    if found is None:
+        return {"ok": False, "reason": f"signed by key {key_id}, which this portal has never used "
+                                       f"(its key is {signer.key_id})"}
+    public_key, retired_at = found
+    if not verify(payload, signature, public_key):
         return {"ok": False, "reason": "the signature does not match the payload; it was altered or not issued here"}
     try:
         body = json.loads(payload)
     except ValueError:
         return {"ok": False, "reason": "the payload is not JSON"}
-    return {"ok": True, "reason": "signature valid", "body": body}
+    # Only one byte string may claim to be a record: the canonical one.
+    if canonical.dumps(body) != payload:
+        return {"ok": False, "reason": "the signature matches, but the payload is not in canonical form"}
+    reason = "signature valid" if retired_at is None else f"signature valid, by key {key_id}, retired {retired_at}"
+    return {"ok": True, "reason": reason, "body": body}

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hmac
 import sqlite3
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
@@ -14,10 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from . import domain
+from . import domain, normalize
 from .cli import DEMO_PASSWORD
 from .db import connect, now
-from .security import new_token, token_hash
+from .security import MIN_PASSWORD, new_token, token_hash
 
 SESSION_COOKIE = "plumb_session"
 ANON_CSRF_COOKIE = "plumb_csrf"
@@ -57,7 +58,8 @@ def _bearer(request: Request) -> sqlite3.Row | None:
     conn = conn_for(request)
     th = token_hash(auth[7:].strip())
     row = conn.execute(
-        "SELECT u.* FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?", (th,)
+        "SELECT u.* FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.expires_at > ?",
+        (th, now()),
     ).fetchone()
     if row is not None:
         conn.execute("UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?", (now(), th))
@@ -134,6 +136,31 @@ async def body(request: Request) -> dict[str, Any]:
     return data
 
 
+async def form_body(request: Request) -> dict[str, Any]:
+    """body() as a dependency. Reading the request is the only async part of
+    a handler; the handler itself is a plain def, so FastAPI runs it in its
+    threadpool and its database work and password hashing never block the
+    event loop for everyone else."""
+    return await body(request)
+
+
+async def json_document(request: Request) -> Any:
+    """A raw JSON body (the import endpoints take any fixture-shaped document)."""
+    try:
+        return await request.json()
+    except ValueError as exc:
+        raise domain.Invalid("the body is not JSON") from exc
+
+
+async def upload_form(request: Request) -> dict[str, Any]:
+    """A multipart form with one file, read on the event loop; the CSRF token
+    is checked by the handler against the session's."""
+    form = await request.form()
+    upload = form.get("file")
+    raw = await upload.read() if hasattr(upload, "read") else None
+    return {"csrf": form.get("csrf"), "file": raw, "event_id": form.get("event_id")}
+
+
 def wants_json(request: Request) -> bool:
     if request.url.path.startswith("/api/") or request.url.path.endswith(".json"):
         return True
@@ -171,14 +198,17 @@ def render(request: Request, template: str, status_code: int = 200, **ctx: Any) 
     return response
 
 
-_secure_cookies = False  # set from settings by main.create_app
+# Whether cookies need the Secure flag, for the request being handled. Set by
+# the app's middleware from its own settings, so redirect() needs no request
+# and two apps in one process (the tests run several) cannot overwrite it.
+secure_cookies: ContextVar[bool] = ContextVar("plumb_secure_cookies", default=True)
 
 
 def redirect(url: str, notice: str | None = None) -> RedirectResponse:
     response = RedirectResponse(url, status_code=303)
     if notice:
         response.set_cookie(FLASH_COOKIE, quote(notice), max_age=60, httponly=True, samesite="lax",
-                            secure=_secure_cookies)
+                            secure=secure_cookies.get())
     return response
 
 
@@ -230,4 +260,7 @@ templates.env.filters["blurb"] = _blurb
 templates.env.globals["demo_password"] = DEMO_PASSWORD
 templates.env.filters["dtlocal"] = _local_input
 templates.env.filters["num"] = lambda v, d=1: "" if v is None else f"{v:.{d}f}"
-templates.env.filters["pct"] = lambda v: "" if v is None else f"{100 * v:.0f}%"
+templates.env.filters["percent"] = domain.shown_percent
+templates.env.globals["min_password"] = MIN_PASSWORD
+templates.env.globals["min_dof"] = normalize.MIN_DOF
+templates.env.filters["pct"] = lambda v: "" if v is None else f"{domain.shown_percent(v)}%"

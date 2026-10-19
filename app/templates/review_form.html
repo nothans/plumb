@@ -17,10 +17,10 @@
         {% if c.description %}<p class="muted small">{{ c.description }}</p>{% endif %}
         <div class="scale" role="radiogroup" aria-label="{{ c.name }}">
           {% for v in range(c.min_value, c.max_value + 1) %}
-          <input type="radio" id="{{ c.key }}-{{ v }}" name="{{ c.key }}" value="{{ v }}" required
+          <input type="radio" id="score_{{ c.key }}-{{ v }}" name="score_{{ c.key }}" value="{{ v }}" required
                  {% if values[c.key] is defined and values[c.key] | string == v | string %}checked{% endif %}
                  {% if not phase.judging_open %}disabled{% endif %}>
-          <label for="{{ c.key }}-{{ v }}">{{ v }}</label>
+          <label for="score_{{ c.key }}-{{ v }}">{{ v }}</label>
           {% endfor %}
         </div>
       </fieldset>

@@ -148,6 +148,20 @@ def _with_deadline(fn: Callable[[], int], deadline: float) -> tuple[int | None, 
     return box.get("status"), box.get("error"), None
 
 
+def payload(row) -> dict:
+    """One audit entry as a receiver gets it: every field its hash covers
+    (detail_json is the exact string hashed; detail is the same, parsed), so
+    the receiver can recompute the hash and, through event_prev, check that
+    no entry of the event was left out. The address itself is never sent,
+    only the keyed tag the hash covers."""
+    return {
+        "seq": row["seq"], "at": row["at"], "event_id": row["event_id"], "actor_id": row["actor_id"],
+        "action": row["action"], "subject": row["subject"], "detail": json.loads(row["detail"]),
+        "detail_json": row["detail"], "ip_tag": row["ip_tag"], "prev_hash": row["prev_hash"],
+        "event_prev": row["event_prev"], "v": row["v"], "hash": row["hash"],
+    }
+
+
 def sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
@@ -179,11 +193,7 @@ class Deliverer:
                     (hook["event_id"], hook["cursor"], batch),
                 ).fetchall()
                 for row in rows:
-                    body = json.dumps({
-                        "seq": row["seq"], "at": row["at"], "event_id": row["event_id"], "actor_id": row["actor_id"],
-                        "action": row["action"], "subject": row["subject"], "detail": json.loads(row["detail"]),
-                        "hash": row["hash"], "prev_hash": row["prev_hash"],
-                    }, separators=(",", ":")).encode()
+                    body = json.dumps(payload(row), separators=(",", ":")).encode()
                     headers = {"Content-Type": "application/json", "User-Agent": "Plumb-Webhook/1",
                                "X-Plumb-Event": row["action"], "X-Plumb-Signature": sign(hook["secret"], body)}
                     status, error, hanging = _with_deadline(

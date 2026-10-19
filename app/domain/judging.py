@@ -17,6 +17,7 @@ from .core import (
     _utcnow,
     clean_email,
     clean_text,
+    get_user,
     user_by_email,
 )
 from .events import (
@@ -74,26 +75,131 @@ def get_invitation(conn: sqlite3.Connection, token: str) -> sqlite3.Row:
     return row
 
 
+def events_of(conn: sqlite3.Connection, user_id: str) -> list[str]:
+    """Every event an account belongs to, as a judge, organizer or team member."""
+    return [r[0] for r in conn.execute(
+        "SELECT event_id FROM event_roles WHERE user_id = ? UNION SELECT event_id FROM team_members WHERE user_id = ?",
+        (user_id, user_id))]
+
+
+def _vouches_for(conn: sqlite3.Connection, voucher_id: str | None, user_id: str, *, besides: str | None = None) -> bool:
+    """Whether voucher runs every event the account belongs to (besides the
+    one being joined). Setting an unclaimed account's password hands over
+    all of its roles, so only someone who organizes all of them may vouch."""
+    voucher = get_user(conn, voucher_id) if voucher_id else None
+    if voucher is None:
+        return False
+    who = Actor(id=voucher["id"], email=voucher["email"], name=voucher["name"], is_admin=bool(voucher["is_admin"]))
+    return all(is_organizer(conn, e, who) for e in events_of(conn, user_id) if e != besides)
+
+
 def may_claim_with(conn: sqlite3.Connection, inv: sqlite3.Row) -> bool:
     """Whether an invitation may set the password of the account it names.
 
-    Holding the link proves the organizer vouches for the address, but only
-    for their own event. An unclaimed account that already belongs to any
-    other event (imported there as a judge or team member) can only be
-    claimed through that event; otherwise an organizer anywhere could take
-    over any imported judge by inviting their address.
+    Holding the link proves the organizer vouches for the address. For an
+    unclaimed account that already belongs to other events (imported there
+    as a judge or team member), the organizer who made the invitation must
+    also run every one of those events; otherwise an organizer anywhere
+    could take over any imported judge by inviting their address. The usual
+    case, a returning judge invited by the team that imported last year's
+    event, passes.
     """
     user = user_by_email(conn, inv["email"])
     if user is None:
         return True
     if user["password_hash"]:
         return False
-    elsewhere = conn.execute(
-        "SELECT 1 FROM event_roles WHERE user_id = ? AND event_id <> ? "
-        "UNION SELECT 1 FROM team_members WHERE user_id = ? AND event_id <> ?",
-        (user["id"], inv["event_id"], user["id"], inv["event_id"]),
-    ).fetchone()
-    return elsewhere is None
+    return _vouches_for(conn, inv["created_by"], user["id"], besides=inv["event_id"])
+
+
+CLAIM_DAYS = 14
+
+
+def unclaimed_accounts(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> list[sqlite3.Row]:
+    """This event's judges and team members whose accounts have no password yet."""
+    require_organizer(conn, event_id, actor)
+    return conn.execute(
+        "SELECT u.id, u.name, u.email, 'judge' AS role FROM event_roles r JOIN users u ON u.id = r.user_id "
+        "WHERE r.event_id = ? AND r.role = 'judge' AND u.password_hash IS NULL "
+        "UNION SELECT u.id, u.name, u.email, 'team member' AS role FROM team_members m JOIN users u ON u.id = m.user_id "
+        "WHERE m.event_id = ? AND u.password_hash IS NULL ORDER BY 3", (event_id, event_id)).fetchall()
+
+
+def issue_claim_link(conn: sqlite3.Connection, actor: Actor | None, event_id: str, user_id: str) -> str:
+    """A single-use link for the owner of an imported account to set its
+    password. Returns the raw token; Plumb sends no mail, the organizer does."""
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        user = get_user(conn, user_id)
+        if user is None or event_id not in events_of(conn, user_id):
+            raise NotFound("no such account in this event")
+        if user["password_hash"]:
+            raise Conflict("that account already has a password; its owner can log in")
+        if not _vouches_for(conn, actor.id, user_id):
+            raise Forbidden("that account also belongs to an event you do not organize; ask an organizer of all of "
+                            "its events, or an admin, to make the link")
+        token = new_token(24)
+        conn.execute("INSERT INTO claim_links(token_hash, user_id, created_by, created_at) VALUES (?,?,?,?)",
+                     (token_hash(token), user_id, actor.id, now()))
+        audit.append(conn, "account.claim_link", actor_id=actor.id, event_id=event_id, subject=user_id, ip=actor.ip)
+    return token
+
+
+def get_claim_link(conn: sqlite3.Connection, token: str) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT c.*, u.email, u.password_hash FROM claim_links c JOIN users u ON u.id = c.user_id WHERE c.token_hash = ?",
+        (token_hash(token),)).fetchone()
+    if row is None:
+        raise NotFound("that claim link is not valid")
+    if row["used_at"] or row["password_hash"]:
+        raise Conflict("this account has been claimed already; log in instead")
+    if parse_ts(row["created_at"]) < _utcnow() - timedelta(days=CLAIM_DAYS):
+        raise Conflict(f"this claim link expired after {CLAIM_DAYS} days; ask the organizer for a new one")
+    return row
+
+
+def use_claim_link(conn: sqlite3.Connection, token: str, name: str, password_hash: str, ip: str | None) -> str:
+    with transaction(conn):
+        link = get_claim_link(conn, token)
+        name = clean_text(name, "name", required=True, max_len=100)
+        conn.execute("UPDATE users SET name = ?, password_hash = ? WHERE id = ? AND password_hash IS NULL",
+                     (name, password_hash, link["user_id"]))
+        conn.execute("UPDATE claim_links SET used_at = ? WHERE token_hash = ?", (now(), token_hash(token)))
+        audit.append(conn, "user.claimed", actor_id=link["user_id"], subject=link["user_id"],
+                     detail={"via": "claim_link", "issued_by": link["created_by"]}, ip=ip)
+    return link["user_id"]
+
+
+def revoke_invitation(conn: sqlite3.Connection, actor: Actor | None, event_id: str, email: str, role: str) -> int:
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        n = conn.execute("DELETE FROM invitations WHERE event_id = ? AND email = ? AND role = ? AND accepted_at IS NULL",
+                         (event_id, email, role)).rowcount
+        if not n:
+            raise NotFound("no pending invitation for that address")
+        audit.append(conn, "invitation.revoked", actor_id=actor.id, event_id=event_id, subject=email,
+                     detail={"role": role, "links": n}, ip=actor.ip)
+    return n
+
+
+def remove_judge(conn: sqlite3.Connection, actor: Actor | None, event_id: str, judge_id: str) -> None:
+    """Take a judge off an event, with their open assignments. A judge who has
+    reviewed anything stays: the reviews are on the record, and removing the
+    judge would orphan them."""
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        if not conn.execute("SELECT 1 FROM event_roles WHERE event_id = ? AND user_id = ? AND role = 'judge'",
+                            (event_id, judge_id)).fetchone():
+            raise NotFound("no such judge in this event")
+        if conn.execute("SELECT 1 FROM reviews WHERE event_id = ? AND judge_id = ? UNION "
+                        "SELECT 1 FROM comparisons WHERE event_id = ? AND judge_id = ?",
+                        (event_id, judge_id, event_id, judge_id)).fetchone():
+            raise Conflict("this judge has reviews on the record; unassign their open projects instead")
+        dropped = conn.execute("DELETE FROM assignments WHERE event_id = ? AND judge_id = ?", (event_id, judge_id)).rowcount
+        conn.execute("DELETE FROM judge_tracks WHERE event_id = ? AND user_id = ?", (event_id, judge_id))
+        conn.execute("DELETE FROM event_roles WHERE event_id = ? AND user_id = ? AND role = 'judge'", (event_id, judge_id))
+        audit.append(conn, "judge.removed", actor_id=actor.id, event_id=event_id, subject=judge_id,
+                     detail={"assignments_dropped": dropped}, ip=actor.ip)
 
 
 def accept_invitation(conn: sqlite3.Connection, actor: Actor | None, token: str) -> str:
@@ -235,6 +341,26 @@ def unassign(conn: sqlite3.Connection, actor: Actor | None, event_id: str, judge
             raise NotFound("no such assignment")
         audit.append(conn, "assignment.removed", actor_id=actor.id, event_id=event_id, subject=project_id,
                      detail={"judge": judge_id}, ip=actor.ip)
+
+
+def release_open_assignments(conn: sqlite3.Connection, actor: Actor | None, event_id: str, judge_id: str) -> int:
+    """Take back every project a judge was given but has not reviewed, so
+    automatic assignment can give them to someone else. Auto-assign counts
+    assignments, not reviews, so a judge who stopped reviewing holds their
+    projects until this runs. Their reviews stay."""
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        released = [r[0] for r in conn.execute(
+            "SELECT a.project_id FROM assignments a WHERE a.event_id = ? AND a.judge_id = ? AND NOT EXISTS "
+            "(SELECT 1 FROM reviews v WHERE v.event_id = a.event_id AND v.judge_id = a.judge_id AND v.project_id = a.project_id)",
+            (event_id, judge_id))]
+        if not released:
+            raise NotFound("this judge has no open assignments")
+        conn.executemany("DELETE FROM assignments WHERE event_id = ? AND judge_id = ? AND project_id = ?",
+                         [(event_id, judge_id, p) for p in released])
+        audit.append(conn, "assignments.released", actor_id=actor.id, event_id=event_id, subject=judge_id,
+                     detail={"projects": released}, ip=actor.ip)
+    return len(released)
 
 
 def judge_queue(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> list[sqlite3.Row]:

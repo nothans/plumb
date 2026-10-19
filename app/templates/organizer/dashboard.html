@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "_macros.html" import phase_tags %}
 {% block title %}Progress · {{ event.name }}{% endblock %}
-{% block head_extra %}{% if phase.judging_open %}<meta http-equiv="refresh" content="60">{% endif %}{% endblock %}
+{# Refreshing is opt-in and can be stopped (WCAG 2.2.1): a page that reloads under a screen reader loses its place. #}
+{% block head_extra %}{% if refresh and phase.judging_open %}<meta http-equiv="refresh" content="60">{% endif %}{% endblock %}
 {% block content %}
 {% set active = 'dashboard' %}{% include "organizer/_nav.html" %}
 {% set covered = prog.projects | length - prog.under_target %}
@@ -17,6 +18,9 @@
       {% elif duplicates or flagged %}Coverage is complete; {{ (duplicates | length) + (flagged | length) }} item{{ '' if (duplicates | length) + (flagged | length) == 1 else 's' }} below need a decision before you publish.
       {% else %}Every project has {{ prog.target }} or more reviews. Check the live results, then publish.{% endif %}
     </p>
+    {% if phase.judging_open %}<p class="small muted">As of {{ as_of | ts }}.
+      {% if refresh %}Refreshing every minute. <a href="/events/{{ event.id }}/manage{{ '?all=1' if show_all }}">Stop refreshing</a>
+      {% else %}<a href="/events/{{ event.id }}/manage?refresh=1{{ '&all=1' if show_all }}">Refresh every minute</a>{% endif %}</p>{% endif %}
   </div>
   <div class="actions">
     {% if not phase.results_published and phase.submissions == 'closed' %}

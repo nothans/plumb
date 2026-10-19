@@ -3,13 +3,15 @@ integrity checks, the audit log, publication, and exports."""
 
 from __future__ import annotations
 
+import hmac
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .. import audit, domain, records, transfer
-from ..web import actor, base_url, body, conn_for, redirect, render, signing_base_url
+from ..db import now
+from ..web import actor, base_url, conn_for, form_body, redirect, render, signing_base_url, upload_form
 from ..webhooks import check_destination
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
@@ -38,8 +40,7 @@ def new_event(request: Request):
 
 
 @router.post("/events/new")
-async def create_event(request: Request):
-    data = await body(request)
+def create_event(request: Request, data: dict = Depends(form_body)):
     form, tracks, prizes = _event_form_data(data)
     try:
         eid = domain.create_event(conn_for(request), actor(request), form, tracks, prizes)
@@ -57,20 +58,17 @@ def import_form(request: Request):
 
 
 @router.post("/events/import")
-async def import_event(request: Request):
+def import_event(request: Request, form: dict = Depends(upload_form)):
     me = domain.require_user(actor(request))
     if not me.is_admin:
         raise domain.Forbidden("only admins can import events")
-    form = await request.form()
-    data = {"csrf": form.get("csrf")}
-    # Reuse the CSRF check without re-reading the multipart body.
+    # The multipart body carries its own CSRF token; check it against the session's.
     expected = request.state.csrf
-    if not expected or data["csrf"] != expected:
+    if not expected or not hmac.compare_digest(str(form["csrf"] or ""), expected):
         raise domain.Forbidden("this form expired; reload the page and try again")
-    upload = form.get("file")
-    if not hasattr(upload, "read"):
+    raw = form["file"]
+    if raw is None:
         return render(request, "import.html", status_code=422, error="choose a JSON file to import")
-    raw = await upload.read()
     if len(raw) > 20 * 1024 * 1024:
         return render(request, "import.html", status_code=413, error="that file is over 20 MB")
     try:
@@ -89,7 +87,7 @@ async def import_event(request: Request):
 
 
 @router.get("/events/{event_id}/manage", response_class=HTMLResponse)
-def dashboard(request: Request, event_id: str, all: int = 0):
+def dashboard(request: Request, event_id: str, all: int = 0, refresh: int = 0):
     conn = conn_for(request)
     me = actor(request)
     prog = domain.progress(conn, me, event_id)
@@ -100,7 +98,7 @@ def dashboard(request: Request, event_id: str, all: int = 0):
     return render(request, "organizer/dashboard.html", event=event, phase=domain.phase(event), prog=prog,
                   duplicates=dups, flagged=flagged, names=res["names"], turnout=domain.turnout(conn, event_id),
                   signals=domain.abuse_signals(conn, me, event_id),
-                  chain=audit.verify_chain(conn), show_all=bool(all),
+                  chain=audit.verify_chain(conn, full=False), show_all=bool(all), refresh=bool(refresh), as_of=now(),
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
 
@@ -119,14 +117,21 @@ def _settings_page(request: Request, event_id: str, form=None, error=None, statu
                   tracks=domain.tracks(conn, event_id), error=error)
 
 
+@router.post("/events/{event_id}/manage/archive")
+def archive(request: Request, event_id: str, data: dict = Depends(form_body)):
+    archived = str(data.get("archived", "1")) == "1"
+    domain.set_archived(conn_for(request), actor(request), event_id, archived)
+    return redirect(f"/events/{event_id}", "Archived: the event has left the home page and the gallery. Its links still work."
+                    if archived else "Restored to the home page and the gallery.")
+
+
 @router.get("/events/{event_id}/manage/settings", response_class=HTMLResponse)
 def settings(request: Request, event_id: str):
     return _settings_page(request, event_id)
 
 
 @router.post("/events/{event_id}/manage/settings")
-async def save_settings(request: Request, event_id: str):
-    data = await body(request)
+def save_settings(request: Request, event_id: str, data: dict = Depends(form_body)):
     form, tracks, prizes = _event_form_data(data)
     try:
         domain.update_event(conn_for(request), actor(request), event_id, form, tracks, prizes)
@@ -138,33 +143,60 @@ async def save_settings(request: Request, event_id: str):
 # --- judges --------------------------------------------------------------------------------
 
 
-@router.get("/events/{event_id}/manage/judges", response_class=HTMLResponse)
-def judges(request: Request, event_id: str, invited: str = ""):
+def _judges_page(request: Request, event_id: str, *, status_code: int = 200, **extra):
     conn = conn_for(request)
-    domain.require_organizer(conn, event_id, actor(request))
-    return render(request, "organizer/judges.html", event=domain.get_event(conn, event_id),
+    me = actor(request)
+    domain.require_organizer(conn, event_id, me)
+    return render(request, "organizer/judges.html", status_code=status_code, event=domain.get_event(conn, event_id),
                   judges=domain.judges(conn, event_id), tracks=domain.tracks(conn, event_id),
-                  pending=domain.pending_invitations(conn, event_id), invite_link=None)
+                  pending=domain.pending_invitations(conn, event_id),
+                  unclaimed=domain.unclaimed_accounts(conn, me, event_id), claim_days=domain.CLAIM_DAYS,
+                  **{"invite_link": None, "claim_link": None, **extra})
+
+
+@router.get("/events/{event_id}/manage/judges", response_class=HTMLResponse)
+def judges(request: Request, event_id: str):
+    return _judges_page(request, event_id)
 
 
 @router.post("/events/{event_id}/manage/invite", response_class=HTMLResponse)
-async def invite(request: Request, event_id: str):
-    data = await body(request)
+def invite(request: Request, event_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     try:
         token = domain.invite(conn, actor(request), event_id, str(data.get("email", "")), str(data.get("role", "judge")))
-        link, error = f"{base_url(request)}/invitations/{token}", None
     except (domain.Invalid, domain.Conflict) as exc:
-        link, error = None, exc.message
-    return render(request, "organizer/judges.html", status_code=200 if link else 422,
-                  event=domain.get_event(conn, event_id), judges=domain.judges(conn, event_id),
-                  tracks=domain.tracks(conn, event_id), pending=domain.pending_invitations(conn, event_id),
-                  invite_link=link, invite_email=data.get("email"), error=error)
+        return _judges_page(request, event_id, status_code=exc.status, invite_email=data.get("email"), error=exc.message)
+    return _judges_page(request, event_id, invite_link=f"{base_url(request)}/invitations/{token}",
+                        invite_email=data.get("email"))
+
+
+@router.post("/events/{event_id}/manage/claim-link", response_class=HTMLResponse)
+def claim_link(request: Request, event_id: str, data: dict = Depends(form_body)):
+    conn = conn_for(request)
+    user_id = str(data.get("user_id", ""))
+    try:
+        token = domain.issue_claim_link(conn, actor(request), event_id, user_id)
+    except (domain.Conflict, domain.Forbidden, domain.NotFound) as exc:
+        return _judges_page(request, event_id, status_code=exc.status, error=exc.message)
+    user = domain.get_user(conn, user_id)
+    return _judges_page(request, event_id, claim_link=f"{base_url(request)}/claim/{token}", claim_email=user["email"])
+
+
+@router.post("/events/{event_id}/manage/invitations/revoke")
+def revoke_invitation(request: Request, event_id: str, data: dict = Depends(form_body)):
+    domain.revoke_invitation(conn_for(request), actor(request), event_id, str(data.get("email", "")),
+                             str(data.get("role", "")))
+    return redirect(f"/events/{event_id}/manage/judges", "Invitation revoked. Its link no longer works.")
+
+
+@router.post("/events/{event_id}/manage/judges/{judge_id}/remove")
+def remove_judge(request: Request, event_id: str, judge_id: str, _: dict = Depends(form_body)):
+    domain.remove_judge(conn_for(request), actor(request), event_id, judge_id)
+    return redirect(f"/events/{event_id}/manage/judges", "Judge removed, with their open assignments.")
 
 
 @router.post("/events/{event_id}/manage/judges/{judge_id}/tracks")
-async def judge_tracks(request: Request, event_id: str, judge_id: str):
-    data = await body(request)
+def judge_tracks(request: Request, event_id: str, judge_id: str, data: dict = Depends(form_body)):
     chosen = data.get("track", [])
     chosen = chosen if isinstance(chosen, list) else [chosen]
     domain.set_judge_tracks(conn_for(request), actor(request), event_id, judge_id, [t for t in chosen if t])
@@ -194,8 +226,7 @@ def assignments(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/assignments/auto")
-async def auto(request: Request, event_id: str):
-    await body(request)
+def auto(request: Request, event_id: str, _: dict = Depends(form_body)):
     result = domain.auto_assign(conn_for(request), actor(request), event_id)
     note = f"Added {result['added']} assignments."
     if result["short"]:
@@ -203,17 +234,22 @@ async def auto(request: Request, event_id: str):
     return redirect(f"/events/{event_id}/manage/assignments", note)
 
 
+@router.post("/events/{event_id}/manage/assignments/release")
+def release_assignments(request: Request, event_id: str, data: dict = Depends(form_body)):
+    n = domain.release_open_assignments(conn_for(request), actor(request), event_id, str(data.get("judge_id", "")))
+    return redirect(f"/events/{event_id}/manage/assignments",
+                    f"Released {n} open assignment{'' if n == 1 else 's'}. Assign automatically to give them to other judges.")
+
+
 @router.post("/events/{event_id}/manage/assignments/add")
-async def add_assignment(request: Request, event_id: str):
-    data = await body(request)
+def add_assignment(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.assign_manual(conn_for(request), actor(request), event_id, str(data.get("judge_id", "")),
                          str(data.get("project_id", "")))
     return redirect(f"/events/{event_id}/manage/assignments#{data.get('project_id', '')}", "Judge assigned.")
 
 
 @router.post("/events/{event_id}/manage/assignments/remove")
-async def remove_assignment(request: Request, event_id: str):
-    data = await body(request)
+def remove_assignment(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.unassign(conn_for(request), actor(request), event_id, str(data.get("judge_id", "")),
                     str(data.get("project_id", "")))
     return redirect(f"/events/{event_id}/manage/assignments#{data.get('project_id', '')}", "Assignment removed.")
@@ -233,15 +269,13 @@ def rubric(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/rubric/lock")
-async def lock_rubric(request: Request, event_id: str):
-    await body(request)
+def lock_rubric(request: Request, event_id: str, _: dict = Depends(form_body)):
     domain.lock_rubric(conn_for(request), actor(request), event_id)
     return redirect(f"/events/{event_id}/manage/rubric", "Rubric locked. The weights can no longer change.")
 
 
 @router.post("/events/{event_id}/manage/rubric")
-async def save_rubric(request: Request, event_id: str):
-    data = await body(request)
+def save_rubric(request: Request, event_id: str, data: dict = Depends(form_body)):
     weights = {k[len("weight_"):]: v for k, v in data.items() if k.startswith("weight_")}
     new = {"name": data.get("new_name"), "description": data.get("new_description"), "weight": data.get("new_weight")}
     domain.update_rubric(conn_for(request), actor(request), event_id, weights, new)
@@ -267,7 +301,7 @@ def live_results(request: Request, event_id: str):
     res = domain.compute_results(conn, event_id)
     event = domain.get_event(conn, event_id)
     pw = domain.pairwise_results(conn, actor(request), event_id)
-    suggestions = domain.default_awards(conn, event_id, res["fit"], res["projects"]) if res["fit"].identifiable else []
+    suggestions = domain.default_awards(conn, event_id, res) if res["fit"].identifiable else []
     open_duplicates = [d for d in domain.duplicate_candidates(conn, event_id) if not d["confirmed"]]
     return render(request, "organizer/results.html", event=event, phase=domain.phase(event), res=res, fit=res["fit"],
                   pw=pw, suggestions=suggestions, leaders=domain.track_leaders(res["fit"], res["projects"]),
@@ -276,13 +310,13 @@ def live_results(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/publish")
-async def publish(request: Request, event_id: str):
-    data = await body(request)
+def publish(request: Request, event_id: str, data: dict = Depends(form_body)):
     if str(data.get("confirm", "")) != "1":
         return redirect(f"/events/{event_id}/manage/results#publish", "Tick the box to confirm; publishing cannot be undone.")
     awards = {k[len("award_"):]: str(v) for k, v in data.items() if k.startswith("award_")}
+    reasons = {k[len("reason_"):]: str(v) for k, v in data.items() if k.startswith("reason_")}
     out = records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
-                                  signing_base_url(request), awards)
+                                  signing_base_url(request), awards, reasons)
     return redirect(f"/events/{event_id}/results",
                     f"Results published with {out['judge_records']} judge records and {out['team_records']} team certificates, all signed.")
 
@@ -307,15 +341,13 @@ def integrity(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/duplicates")
-async def resolve_duplicate(request: Request, event_id: str):
-    data = await body(request)
+def resolve_duplicate(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.resolve_duplicate(conn_for(request), actor(request), str(data.get("keep", "")), str(data.get("drop", "")))
     return redirect(f"/events/{event_id}/manage/integrity", "Marked as a duplicate. It has left the gallery and the ranking.")
 
 
 @router.post("/projects/{project_id}/disqualify")
-async def disqualify(request: Request, project_id: str):
-    data = await body(request)
+def disqualify(request: Request, project_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     project = domain.get_project(conn, project_id)
     reason = str(data.get("reason", "")) if data.get("action") != "restore" else None
@@ -326,8 +358,7 @@ async def disqualify(request: Request, project_id: str):
 
 
 @router.post("/events/{event_id}/manage/disqualify")
-async def disqualify_by_id(request: Request, event_id: str):
-    data = await body(request)
+def disqualify_by_id(request: Request, event_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     project = domain.get_project(conn, str(data.get("project_id", "")).strip())
     if project["event_id"] != event_id:
@@ -339,8 +370,7 @@ async def disqualify_by_id(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/void-votes")
-async def void_votes(request: Request, event_id: str):
-    data = await body(request)
+def void_votes(request: Request, event_id: str, data: dict = Depends(form_body)):
     n = domain.remove_votes_of(conn_for(request), actor(request), event_id, str(data.get("voter_id", "")),
                                str(data.get("reason", "")))
     return redirect(f"/events/{event_id}/manage/integrity", f"Removed {n} votes.")
@@ -352,7 +382,7 @@ def audit_log(request: Request, event_id: str, before: int | None = None, action
     rows = domain.audit_entries(conn, actor(request), event_id, before=before, action=action or None)
     entries = [{**dict(r), "detail_obj": json.loads(r["detail"])} for r in rows]
     return render(request, "organizer/audit.html", event=domain.get_event(conn, event_id), entries=entries,
-                  action=action, chain=audit.verify_chain(conn))
+                  action=action, chain=audit.verify_chain(conn, full=False))
 
 
 # --- integrations ------------------------------------------------------------------------
@@ -366,8 +396,7 @@ def integrations(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/integrations/webhooks", response_class=HTMLResponse)
-async def add_webhook(request: Request, event_id: str):
-    data = await body(request)
+def add_webhook(request: Request, event_id: str, data: dict = Depends(form_body)):
     conn = conn_for(request)
     try:
         hook = domain.create_webhook(conn, actor(request), event_id, str(data.get("url", "")), check_destination)
@@ -379,8 +408,7 @@ async def add_webhook(request: Request, event_id: str):
 
 
 @router.post("/events/{event_id}/manage/integrations/webhooks/{hook_id}/delete")
-async def remove_webhook(request: Request, event_id: str, hook_id: str):
-    await body(request)
+def remove_webhook(request: Request, event_id: str, hook_id: str, _: dict = Depends(form_body)):
     domain.delete_webhook(conn_for(request), actor(request), event_id, hook_id)
     return redirect(f"/events/{event_id}/manage/integrations", "Webhook removed.")
 

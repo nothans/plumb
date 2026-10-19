@@ -13,7 +13,11 @@
       <tbody>{% for j in judges %}
         <tr>
           <td><strong>{{ j.name }}</strong><br><span class="small muted">{{ j.email }}</span></td>
-          <td class="num">{{ j.reviewed }} / {{ j.assigned }}</td>
+          <td class="num">{{ j.reviewed }} / {{ j.assigned }}
+            {% if not j.reviewed and not event.results_published_at %}
+            <form method="post" action="/events/{{ event.id }}/manage/judges/{{ j.id }}/remove" class="mt-s">{{ csrf_field() }}
+              <button type="submit" class="small" aria-label="Remove {{ j.name }} from this event">Remove</button>
+            </form>{% endif %}</td>
           <td>
             <form method="post" action="/events/{{ event.id }}/manage/judges/{{ j.id }}/tracks">{{ csrf_field() }}
               <div class="checks">{% for t in tracks %}<label><input type="checkbox" name="track" value="{{ t.id }}" {% if t.id in j.tracks %}checked{% endif %}>{{ t.name }}</label>{% endfor %}</div>
@@ -24,6 +28,24 @@
       {% else %}<tr><td colspan="3" class="muted">No judges yet. Invite some.</td></tr>{% endfor %}</tbody>
     </table>
     </div>
+    <p class="small muted">A judge with reviews on the record stays; to lighten their load, unassign their open projects on the Assignments page.</p>
+    {% if unclaimed %}
+    <h2 id="claim">No account yet ({{ unclaimed | length }})</h2>
+    <p class="small muted">These people came in with an import and have never set a password. A claim link lets one of them set it: it works once, for {{ claim_days }} days, and only you can make it for someone whose every event you organize.</p>
+    {% if claim_link %}
+      <div class="notice" role="status">Send this link to {{ claim_email }}, and only to them: whoever opens it sets the password. Plumb does not send email.</div>
+      <input type="text" readonly value="{{ claim_link }}" aria-label="Claim link">
+    {% endif %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
+      <tbody>{% for u in unclaimed %}<tr>
+        <td><strong>{{ u.name }}</strong><br><span class="small muted">{{ u.email }}</span></td>
+        <td>{{ u.role }}</td>
+        <td><form method="post" action="/events/{{ event.id }}/manage/claim-link">{{ csrf_field() }}
+          <input type="hidden" name="user_id" value="{{ u.id }}"><button type="submit">Make claim link</button></form></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
   </div>
   <aside>
     <div class="panel">
@@ -42,7 +64,10 @@
       </form>
       {% if pending %}
       <h3>Not yet accepted</h3>
-      <ul class="small">{% for p in pending %}<li>{{ p.email }} ({{ p.role }}), {{ p.created_at | ts }}</li>{% endfor %}</ul>
+      <ul class="small">{% for p in pending %}<li>{{ p.email }} ({{ p.role }}), {{ p.created_at | ts }}
+        <form method="post" action="/events/{{ event.id }}/manage/invitations/revoke" class="inline">{{ csrf_field() }}
+          <input type="hidden" name="email" value="{{ p.email }}"><input type="hidden" name="role" value="{{ p.role }}">
+          <button type="submit" class="small" aria-label="Revoke the invitation for {{ p.email }}">Revoke</button></form></li>{% endfor %}</ul>
       {% endif %}
     </div>
   </aside>

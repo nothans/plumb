@@ -16,7 +16,7 @@ import sqlite3
 from collections import defaultdict
 from datetime import timedelta
 
-from . import audit, domain
+from . import audit, domain, fixture_schema
 from .db import new_id, now, parse_ts, to_ts, transaction
 from .security import new_token
 
@@ -49,8 +49,8 @@ def _need(obj: dict, key: str, where: str):
 def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, organizer_ids: list[str] = (),
                  event_id: str | None = None) -> dict:
     """Load a fixture-shaped document as a new event. All or nothing."""
-    if not isinstance(data, dict):
-        raise domain.Invalid("expected a JSON object")
+    # Every field, checked by the same cleaners as the forms, before anything is written.
+    data = fixture_schema.validate(data)
     ev = data.get("event") or {}
     eid = event_id or _need(ev, "id", "event")
     name = _need(ev, "name", "event")
@@ -164,14 +164,15 @@ def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, 
                         keys.append(k)
                     lo, hi = min(lo, int(v)), max(hi, int(v))
             crit_defs = [{"key": k, "name": k.replace("_", " ").capitalize(), "weight": 1, "min": lo, "max": hi} for k in keys]
-        crit_ids = {}
+        crit_ids, crit_range = {}, {}
         for pos, c in enumerate(crit_defs):
+            crit_range[c["key"]] = (int(c.get("min", 1)), int(c.get("max", 5)))
             cid = new_id("crt")
             crit_ids[c["key"]] = cid
             conn.execute(
                 "INSERT INTO criteria(id, event_id, key, name, description, weight, min_value, max_value, position) "
                 "VALUES (?,?,?,?,?,?,?,?,?)",
-                (cid, eid, c["key"], c.get("name", c["key"]), c.get("description", ""), float(c.get("weight", 1)),
+                (cid, eid, c["key"], c.get("name") or c["key"], c.get("description", ""), float(c.get("weight", 1)),
                  int(c.get("min", 1)), int(c.get("max", 5)), pos),
             )
 
@@ -256,6 +257,9 @@ def import_event(conn: sqlite3.Connection, data: dict, *, actor_id: str | None, 
             for key, value in s["criteria"].items():
                 if key not in crit_ids:
                     raise domain.Invalid(f"score uses criterion '{key}' that the file does not define")
+                lo, hi = crit_range[key]
+                if not lo <= int(value) <= hi:
+                    raise domain.Invalid(f"a score of {value} for {key} is outside its range {lo} to {hi}")
                 conn.execute("INSERT INTO review_scores(review_id, criterion_id, value) VALUES (?,?,?)",
                              (rid, crit_ids[key], int(value)))
             counts["scores"] += 1

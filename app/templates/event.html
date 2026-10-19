@@ -15,6 +15,7 @@
   </div>
 </div>
 
+{% if event.archived_at %}<div class="alert">This event was archived {{ event.archived_at | ts }}. It no longer appears on the home page or in the gallery.</div>{% endif %}
 <ol class="timeline" aria-label="Schedule">
   <li class="{{ 'done' if phase.submissions != 'upcoming' }}"><strong>Submissions open</strong><div class="when">{{ event.submissions_open | ts }}</div></li>
   <li class="{{ 'now' if phase.submissions == 'open' else ('done' if phase.submissions == 'closed') }}"><strong>Submissions close</strong><div class="when">{{ event.submissions_close | ts }}</div></li>

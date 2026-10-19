@@ -90,11 +90,48 @@ def test_prize_ids_survive_an_edit(organizer, db):
 # --- awards --------------------------------------------------------------------------------------
 
 
-def _published_fixture(organizer, db, awards):
+REASONS = {"prz_a": "the judges' room chose it", "prz_b": "the judges' room chose it"}
+
+
+def _with_prizes(db):
     set_event(db, FIX, voting_open=ts(-48), voting_close=ts(-1))
     db.execute("INSERT INTO prizes(id, event_id, name, position) VALUES ('prz_a', ?, 'Grand', 0), ('prz_b', ?, 'Second', 1)",
                (FIX, FIX))
-    return organizer.post(f"/api/v1/events/{FIX}/publish", json={"awards": awards})
+
+
+def _published_fixture(organizer, db, awards):
+    _with_prizes(db)
+    return organizer.post(f"/api/v1/events/{FIX}/publish", json={"awards": awards, "reasons": REASONS})
+
+
+def test_a_close_call_needs_a_reason_and_the_record_carries_it(organizer, anon, db):
+    _with_prizes(db)
+    suggested = {s["prize_id"]: s for s in organizer.get(f"/api/v1/events/{FIX}/awards/suggested").json()}
+    assert suggested["prz_a"]["close_call"] and suggested["prz_a"]["p_beats_runner_up"] < 0.6
+    r = organizer.post(f"/api/v1/events/{FIX}/publish")
+    assert r.status_code == 422 and "close call" in r.json()["error"] and "Grand" in r.json()["error"]
+    assert db.execute("SELECT results_published_at FROM events WHERE id = ?", (FIX,)).fetchone()[0] is None
+    r = organizer.post(f"/api/v1/events/{FIX}/publish", json={"reasons": {"prz_a": "a shared demo won the room",
+                                                                          "prz_b": "the judges' room chose it"}})
+    assert r.status_code == 200
+    body = json.loads(db.execute("SELECT payload FROM records WHERE event_id = ? AND kind = 'results'", (FIX,)).fetchone()[0])
+    grand = next(a for a in body["awards"] if a["prize"] == "prz_a")
+    assert grand["close_call"] and grand["reason"] == "a shared demo won the room"
+    assert "Organizers' reason: a shared demo won the room" in anon.get(f"/events/{FIX}/results").text
+
+
+def test_a_clear_win_needs_no_reason():
+    from app.domain import award_check
+    from app.normalize import Observation, fit
+    # 8 judges on 3 projects: 21 residual dof, enough for Plumb to state probabilities.
+    obs = [Observation(f"j{k}", p, s + (k % 3) - 1) for k in range(8)
+           for p, s in (("top", 90.0), ("mid", 60.0), ("low", 40.0))]
+    f = fit(obs)
+    clear = award_check(f, "top", ["top", "mid", "low"])
+    assert clear["rival"] == "mid" and clear["p"] > 0.95 and not clear["close_call"]
+    against = award_check(f, "mid", ["top", "mid", "low"])
+    assert against["rival"] == "top" and against["p"] < 0.05 and against["close_call"]
+    assert award_check(f, "top", ["top"]) == {"rival": None, "p": None, "close_call": False}
 
 
 def test_one_project_cannot_win_two_overall_prizes(organizer, db):

@@ -3,6 +3,9 @@ retired without losing anything, and the defaults survive a venue."""
 
 import dataclasses
 import io
+import json
+import os
+import re
 
 import pytest
 
@@ -128,3 +131,102 @@ def test_rate_limits_survive_a_venue_and_can_be_configured(app):
     for bad in ("signup", "signup=x/1", "nosuch=1/1", "signup=0/10"):
         with pytest.raises(ValueError):
             ratelimit.parse_limits(bad)
+
+
+# --- archive ------------------------------------------------------------------------------
+
+
+def test_an_archived_event_leaves_the_listings_but_keeps_its_links(app, organizer, judge_a, anon, db):
+    fixture_title = db.execute("SELECT title FROM projects WHERE id = 'prj_01'").fetchone()[0]
+    assert 'href="/projects/prj_01"' in anon.get("/projects?q=" + fixture_title).text
+    assert judge_a.post("/api/v1/events/evt_01/archive").status_code == 403
+    assert organizer.post("/api/v1/events/evt_01/archive").status_code == 204
+    assert organizer.post("/api/v1/events/evt_01/archive").status_code == 409
+    assert "evt_01" not in [e["id"] for e in anon.get("/api/v1/events").json()]
+    assert "evt_01" in [e["id"] for e in anon.get("/api/v1/events?archived=true").json()]
+    assert 'href="/events/evt_01"' not in anon.get("/").text and "1 archived event" in anon.get("/").text
+    assert 'href="/events/evt_01"' in anon.get("/?archived=1").text
+    page = anon.get("/events/evt_01")
+    assert page.status_code == 200 and "This event was archived" in page.text
+    assert "evt_01" in judge_a.get("/api/v1/me").json()["events"]    # an archive never hides your own roles
+    assert 'href="/projects/prj_01"' not in anon.get("/projects?q=" + fixture_title).text
+    assert 'href="/projects/prj_01"' in anon.get("/projects?event=evt_01").text
+    assert organizer.delete("/api/v1/events/evt_01/archive").status_code == 204
+    assert "evt_01" in [e["id"] for e in anon.get("/api/v1/events").json()]
+    actions = [r[0] for r in db.execute("SELECT action FROM audit_log WHERE event_id = 'evt_01' AND action LIKE 'event.%'")]
+    assert actions[-2:] == ["event.archived", "event.restored"]
+
+
+def test_the_gallery_leads_with_the_newest_event(anon, db):
+    newest = db.execute("SELECT e.id FROM events e JOIN projects p ON p.event_id = e.id "
+                        "WHERE e.archived_at IS NULL ORDER BY e.created_at DESC, e.id DESC LIMIT 1").fetchone()[0]
+    first = re.search(r'href="/projects/(prj_[^"]+)"', anon.get("/projects").text).group(1)
+    assert db.execute("SELECT event_id FROM projects WHERE id = ?", (first,)).fetchone()[0] == newest
+
+
+# --- signing keys ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX")
+def test_the_key_file_is_private_from_the_first_byte(tmp_path):
+    from app.signing import Signer
+    Signer.load_or_create(tmp_path / "k" / "signing-key.pem")
+    assert (tmp_path / "k" / "signing-key.pem").stat().st_mode & 0o777 == 0o600
+
+
+def test_a_rotated_key_keeps_old_records_verifiable(settings, anon):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.signing import Signer
+    conn = connect(settings.database_path)
+    old = conn.execute("SELECT id, key_id FROM records LIMIT 1").fetchone()
+    env = anon.get(f"/records/{old['id']}.json").json()
+    before = Signer.load_or_create(settings.signing_key_path)
+    new = Signer.rotate(settings.signing_key_path)
+    assert new.key_id != before.key_id == old["key_id"]
+    assert b"PRIVATE" in settings.signing_key_path.read_bytes()     # the new key; the old private half is gone
+    client = TestClient(create_app(settings), base_url="http://testserver")
+    keys = client.get("/.well-known/plumb-key.json").json()["keys"]
+    assert [k["kid"] for k in keys] == [new.key_id, before.key_id] and "retired_at" in keys[1]
+    result = client.post("/api/v1/verify", json=env).json()
+    assert result["ok"] and "retired" in result["reason"]
+    assert client.get(f"/records/{old['id']}.json").json()["public_key"] == before.public_key_b64
+    # A key the portal never used, or a payload re-serialized, is refused.
+    assert not client.post("/api/v1/verify", json={**env, "key_id": "0" * 16}).json()["ok"]
+    loose = json.dumps(json.loads(env["payload"]), indent=1)
+    assert not client.post("/api/v1/verify", json={**env, "payload": loose}).json()["ok"]
+
+
+# --- housekeeping -------------------------------------------------------------------------
+
+
+def test_idle_rate_limit_keys_are_dropped(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(ratelimit.time, "monotonic", lambda: clock[0])
+    limiter = ratelimit.RateLimiter()
+    for i in range(500):
+        limiter.hit("login", f"user{i}@example.org", 10, 300)
+    assert len(limiter._hits) == 500
+    clock[0] += 3601 + 60       # past the longest window
+    limiter.hit("login", "fresh@example.org", 10, 300)
+    assert set(limiter._hits) == {"login:fresh@example.org"}
+
+
+def test_expired_sessions_are_deleted_when_a_session_starts(app, db):
+    db.execute("INSERT INTO sessions(token_hash, user_id, csrf, created_at, expires_at) "
+               "SELECT 'old-token', id, 'x', '2020-01-01T00:00:00Z', '2020-01-15T00:00:00Z' FROM users LIMIT 1")
+    db.commit()
+    c = client_for(app)
+    c.post("/login", data={"csrf": csrf_of(c, "/login"), "email": "admin@example.org", "password": "plumb-demo-2026",
+                           "next": "/"})
+    assert not db.execute("SELECT 1 FROM sessions WHERE token_hash = 'old-token'").fetchone()
+    assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] > 0   # the live ones stay
+
+
+def test_the_dashboard_refreshes_only_when_asked(organizer):
+    assert organizer.get("/api/v1/events/evt_01").json()["phase"]["judging_open"]
+    page = organizer.get("/events/evt_01/manage").text
+    assert 'http-equiv="refresh"' not in page and "Refresh every minute" in page
+    page = organizer.get("/events/evt_01/manage?refresh=1").text
+    assert 'http-equiv="refresh"' in page and "Stop refreshing" in page

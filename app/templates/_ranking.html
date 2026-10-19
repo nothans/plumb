@@ -21,8 +21,8 @@
       <td class="col-opt">{{ tracks.get(proj.track_id, '') }}</td>
       <td class="num col-opt">{{ p.n_reviews }}</td>
       <td class="num col-opt">{{ p.raw_mean | num }}</td>
-      <td class="num"><strong>{{ p.adjusted | num }}</strong><br><span class="small muted">&plusmn;{{ (p.high - p.adjusted) | num }}</span></td>
-      <td class="iv col-opt">{{ interval(p) }}</td>
+      <td class="num"><strong>{{ p.adjusted | num }}</strong>{% if p.high is not none %}<br><span class="small muted">&plusmn;{{ (p.high - p.adjusted) | num }}</span>{% endif %}</td>
+      <td class="iv col-opt">{% if p.high is not none %}{{ interval(p) }}{% endif %}</td>
       {% if not all_ties %}<td class="num">{% if not loop.last %}{{ certainty(p.p_above_next) }}{% endif %}</td>{% endif %}
     </tr>
   {% endfor %}

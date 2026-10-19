@@ -50,4 +50,14 @@
   <div class="actions"><button class="primary" type="submit">{% if event %}Save settings{% else %}Create event{% endif %}</button></div>
 </form>
 </div>
+{% if event %}
+<div class="panel">
+  <h2 class="mt-0">{{ 'Restore' if event.archived_at else 'Archive' }}</h2>
+  <p class="small muted">{% if event.archived_at %}Archived {{ event.archived_at | ts }}. Restoring puts it back on the home page and in the gallery.{% else %}Archiving takes the event off the home page and out of the gallery, for a finished event or a rehearsal. Nothing is deleted or frozen, its links keep working, and you can restore it.{% endif %}</p>
+  <form method="post" action="/events/{{ event.id }}/manage/archive">{{ csrf_field() }}
+    <input type="hidden" name="archived" value="{{ '0' if event.archived_at else '1' }}">
+    <button type="submit">{{ 'Restore event' if event.archived_at else 'Archive event' }}</button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

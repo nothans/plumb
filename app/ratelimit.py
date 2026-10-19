@@ -24,10 +24,22 @@ class RateLimiter:
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
         self.refused: dict[str, int] = defaultdict(int)
+        self._pruned = time.monotonic()
+
+    def _prune(self, now: float) -> None:
+        """Drop keys with no hit inside their window (one per email ever
+        tried, otherwise kept forever). Runs at most once a minute."""
+        if now - self._pruned < 60:
+            return
+        self._pruned = now
+        longest = max(w for _, w in self.limits.values())
+        for k in [k for k, q in self._hits.items() if not q or now - q[-1] > longest]:
+            del self._hits[k]
 
     def hit(self, bucket: str, key: str, limit: int, window: float) -> None:
         now = time.monotonic()
         with self._lock:
+            self._prune(now)
             q = self._hits[f"{bucket}:{key}"]
             while q and now - q[0] > window:
                 q.popleft()

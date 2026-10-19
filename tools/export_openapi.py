@@ -23,7 +23,7 @@ def document() -> dict:
 def main() -> int:
     out = ROOT / "docs" / "openapi.json"
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(document(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(document(), indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out}")
     return 0
 
