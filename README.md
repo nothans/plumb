@@ -9,6 +9,10 @@ So judge bias is corrected with a model tested against a planted truth on the DO
 Built for [DOGFOOD 2026](https://dogfoodhack.com) ("build the platform that will judge you").
 MIT licensed.
 
+**After the contest.** DOGFOOD 2026 judged commit [`5c36b75`](https://github.com/nothans/plumb/tree/5c36b7538816150e2cba038f1cc61382513cf7d7), which placed 19th of 194 (top 10%).
+Everything since is v1.1, built after the results from what we learned studying the top entries.
+[AFTER-DOGFOOD.md](AFTER-DOGFOOD.md) says what we learned and what changed.
+
 **[Watch the 3-minute demo](https://nothans.github.io/plumb/)**: a finished event, an organizer mid-judging, the integrity checks, a judge, and a participant.
 
 ## Verified, not just claimed
@@ -166,6 +170,7 @@ A real event runs from its own compose file and volume, so nothing about the dem
 * [JUDGING.md](JUDGING.md): assignment, scoring math, normalization, the proof, pairwise mode, winners.
 * [THREAT-MODEL.md](THREAT-MODEL.md): who might cheat, how, and what stops them.
 * [OPERATIONS.md](OPERATIONS.md): running a real event, from a month out to after the results.
+* [AFTER-DOGFOOD.md](AFTER-DOGFOOD.md): what the contest taught us, and what v1.1 changed because of it.
 
 ## Tests
 
