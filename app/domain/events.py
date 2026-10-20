@@ -6,7 +6,7 @@ import re
 import sqlite3
 from datetime import datetime
 
-from .. import audit
+from .. import audit, canonical, method
 from ..db import new_id, now, parse_ts, transaction
 from .core import (
     Actor,
@@ -427,17 +427,24 @@ def update_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str, 
                          detail={"weights": changes, "added": added}, ip=actor.ip)
 
 
-def lock_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> None:
+def lock_rubric(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> str:
     """Freeze the rubric for good, typically as judging opens, so nobody can
-    steer the ranking by reweighting after seeing it. Irreversible."""
+    steer the ranking by reweighting after seeing it, and register the whole
+    judging method (app/method.py) with it. Irreversible. Returns the
+    method's hash, which the event page publishes."""
     actor = require_organizer(conn, event_id, actor)
     with transaction(conn):
         event = get_event(conn, event_id)
         if event["rubric_locked_at"]:
             raise Conflict("the rubric is already locked")
-        conn.execute("UPDATE events SET rubric_locked_at = ? WHERE id = ?", (now(), event_id))
+        registered = method.describe(criteria(conn, event_id))
+        digest = method.digest(registered)
+        conn.execute("UPDATE events SET rubric_locked_at = ?, method_json = ?, method_hash = ? WHERE id = ?",
+                     (now(), canonical.dumps(registered), digest, event_id))
         audit.append(conn, "rubric.locked", actor_id=actor.id, event_id=event_id, subject=event_id,
-                     detail={"weights": {c["key"]: c["weight"] for c in criteria(conn, event_id)}}, ip=actor.ip)
+                     detail={"weights": {c["key"]: c["weight"] for c in criteria(conn, event_id)},
+                             "method_sha256": digest}, ip=actor.ip)
+    return digest
 
 
 def rubric_history(conn: sqlite3.Connection, event_id: str) -> dict:

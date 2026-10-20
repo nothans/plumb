@@ -7,13 +7,13 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import __version__, domain, web, webhooks
+from . import __version__, access, domain, web, webhooks
 from .config import Settings, load_settings
 from .db import connect, init_schema
 from .ratelimit import RateLimiter, parse_limits
@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
+        dependencies=[Depends(access.enforce)],   # deny by default: every route's declared level, checked first
         title="Plumb",
         version=__version__,
         summary="A hackathon submission and judging portal whose results you can check.",
@@ -91,7 +92,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # The database refused an impossible state that the domain layer did
         # not catch first. Say so rather than failing with a 500.
         logging.getLogger("plumb").warning("integrity error on %s: %s", request.url.path, exc)
-        err = domain.Conflict("that conflicts with existing data")
+        # A rule trigger's own message (app/schema.sql) is written for people;
+        # anything else from SQLite stays in the log.
+        text = str(exc)
+        err = domain.Conflict(text.removeprefix("plumb: ") if text.startswith("plumb: ") else "that conflicts with existing data")
         return web.error_response(request, err)
 
     @app.exception_handler(RequestValidationError)
@@ -105,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # organizer first: its /events/new and /events/import must win over /events/{event_id}.
     for module in (organizer, account, teams, judging, public, api):
         app.include_router(module.router)
+    access.check_declared(app)
     return app
 
 

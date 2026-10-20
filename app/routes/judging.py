@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from .. import domain
+from .. import domain, records
 from ..db import transaction
 from ..security import hash_password, password_problem
-from ..web import actor, client_ip, conn_for, form_body, redirect, render
+from ..web import actor, client_ip, conn_for, form_body, redirect, render, signing_base_url
 from .account import start_session
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
@@ -111,12 +113,14 @@ def _review_page(request: Request, project_id: str, *, form=None, comment=None, 
         raise domain.Forbidden("this project is not assigned to you")
     event = domain.get_event(conn, project["event_id"])
     review = domain.own_review(conn, me, project_id)
-    values = form or (review["values"] if review else {})
+    draft = None if review else domain.review_draft(conn, me, project_id)
+    values = form or (review["values"] if review else (draft["values"] if draft else {}))
     if comment is None:
-        comment = review["comment"] if review else ""
+        comment = review["comment"] if review else (draft["comment"] if draft else "")
     return render(request, "review_form.html", status_code=status_code, project=project, event=event,
                   phase=domain.phase(event), criteria=domain.criteria(conn, project["event_id"]), review=review,
                   values=values, comment=comment, error=error, members=domain.team_members(conn, project["team_id"]),
+                  draft=draft,
                   imported=assignment["source"] == "import")
 
 
@@ -133,12 +137,36 @@ def save_review(request: Request, project_id: str, data: dict = Depends(form_bod
     # cannot collide with the form's own fields.
     values = {k.removeprefix("score_"): v for k, v in data.items() if k.startswith("score_")}
     comment = str(data.get("comment", ""))
+    draft = data.get("action") == "draft"
     try:
-        domain.save_review(conn, actor(request), project_id, values, comment)
+        if draft:
+            domain.save_review_draft(conn, actor(request), project_id, values, comment)
+        else:
+            domain.save_review(conn, actor(request), project_id, values, comment)
     except (domain.Invalid, domain.Conflict) as exc:
         return _review_page(request, project_id, form=values, comment=comment, error=exc.message,
                             status_code=exc.status)
-    return redirect(f"/events/{project['event_id']}/judge", f"Review saved for {project['title']}.")
+    if draft:
+        return redirect(f"/projects/{project_id}/review", "Draft saved. It counts for nothing until you submit it.")
+    return redirect(f"/projects/{project_id}/review/receipt", f"Review submitted for {project['title']}.")
+
+
+@router.get("/projects/{project_id}/review/receipt", response_class=HTMLResponse)
+def review_receipt(request: Request, project_id: str):
+    conn = conn_for(request)
+    row = records.review_receipt(conn, actor(request), project_id, request.app.state.signer, signing_base_url(request))
+    project = domain.get_project(conn, project_id)
+    return render(request, "receipt.html", receipt=row, body=json.loads(row["payload"]), project=project,
+                  criteria=domain.criteria(conn, project["event_id"]),
+                  back=f"/events/{project['event_id']}/judge", back_label="Back to your queue")
+
+
+@router.get("/receipts/{number}.json")
+def receipt_json(request: Request, number: int):
+    row = records.get_receipt(conn_for(request), actor(request), number)
+    found = request.app.state.signer.public_key_for(row["key_id"])
+    return {"payload": row["payload"], "signature": row["signature"], "key_id": row["key_id"],
+            "public_key": found[0] if found else None}
 
 
 # --- pairwise ---------------------------------------------------------------------

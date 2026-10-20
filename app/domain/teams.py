@@ -11,12 +11,15 @@ from .core import (
     Actor,
     Conflict,
     Forbidden,
+    Invalid,
     NotFound,
     clean_text,
+    clean_ts,
 )
 from .events import (
     get_event,
     phase,
+    require_organizer,
     require_user,
 )
 
@@ -26,6 +29,69 @@ def team_for(conn: sqlite3.Connection, event_id: str, user_id: str) -> sqlite3.R
         "SELECT t.* FROM teams t JOIN team_members m ON m.team_id = t.id WHERE t.event_id = ? AND m.user_id = ?",
         (event_id, user_id),
     ).fetchone()
+
+
+def extension_for(conn: sqlite3.Connection, team_id: str | None) -> sqlite3.Row | None:
+    if not team_id:
+        return None
+    return conn.execute("SELECT * FROM team_extensions WHERE team_id = ?", (team_id,)).fetchone()
+
+
+def extensions(conn: sqlite3.Connection, event_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT x.*, t.name AS team_name FROM team_extensions x JOIN teams t ON t.id = x.team_id "
+        "WHERE x.event_id = ? ORDER BY t.name", (event_id,)).fetchall()
+
+
+def submissions_state(conn: sqlite3.Connection, event: sqlite3.Row, team_id: str | None) -> tuple[str, str]:
+    """(upcoming | open | closed, the deadline that applies) for one team:
+    the event's, or the team's extension once the event's has passed."""
+    state = phase(event)["submissions"]
+    ext = extension_for(conn, team_id)
+    if state == "closed" and ext and now() < ext["until"]:
+        return "open", ext["until"]
+    return state, (ext["until"] if ext and state == "closed" else event["submissions_close"])
+
+
+def grant_extension(conn: sqlite3.Connection, actor: Actor | None, event_id: str, team_id: str, until: str,
+                    reason: str) -> None:
+    """Give one team a later deadline for its entry, with the organizers'
+    reason. The team's members stay as they were at the main close; only the
+    entry may change, until the extension ends or a judge reviews it. The
+    database enforces the new deadline too (rule_submitted_in_time), and the
+    signed results list every extension."""
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        event = get_event(conn, event_id)
+        if event["results_published_at"]:
+            raise Conflict("results are published; deadlines are final")
+        team = conn.execute("SELECT * FROM teams WHERE id = ? AND event_id = ?", (team_id, event_id)).fetchone()
+        if team is None:
+            raise NotFound("no such team in this event")
+        until = clean_ts(until, "extension end", required=True)
+        reason = clean_text(reason, "reason", required=True, max_len=300)
+        if until <= event["submissions_close"]:
+            raise Invalid("an extension has to end after the event's own deadline")
+        if event["judging_close"] and until >= event["judging_close"]:
+            raise Invalid("an extension has to end before judging closes, so the entry can still be judged")
+        old = extension_for(conn, team_id)
+        conn.execute(
+            "INSERT INTO team_extensions(team_id, event_id, until, reason, granted_by, granted_at) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(team_id) DO UPDATE SET until = excluded.until, reason = excluded.reason, "
+            "granted_by = excluded.granted_by, granted_at = excluded.granted_at",
+            (team_id, event_id, until, reason, actor.id, now()))
+        audit.append(conn, "team.extension_granted", actor_id=actor.id, event_id=event_id, subject=team_id,
+                     detail={"until": until, "reason": reason, "was": old["until"] if old else None}, ip=actor.ip)
+
+
+def revoke_extension(conn: sqlite3.Connection, actor: Actor | None, event_id: str, team_id: str) -> None:
+    actor = require_organizer(conn, event_id, actor)
+    with transaction(conn):
+        if get_event(conn, event_id)["results_published_at"]:
+            raise Conflict("results are published; deadlines are final")
+        if not conn.execute("DELETE FROM team_extensions WHERE team_id = ? AND event_id = ?", (team_id, event_id)).rowcount:
+            raise NotFound("that team has no extension")
+        audit.append(conn, "team.extension_revoked", actor_id=actor.id, event_id=event_id, subject=team_id, ip=actor.ip)
 
 
 def team_members(conn: sqlite3.Connection, team_id: str) -> list[sqlite3.Row]:

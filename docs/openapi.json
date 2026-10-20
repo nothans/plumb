@@ -313,6 +313,30 @@
         "title": "EventIn",
         "type": "object"
       },
+      "ExtensionIn": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "until": {
+            "description": "ISO 8601, UTC; after the event's deadline, before judging closes",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "until",
+          "reason"
+        ],
+        "title": "ExtensionIn",
+        "type": "object"
+      },
       "GalleryOut": {
         "properties": {
           "projects": {
@@ -584,6 +608,12 @@
             ],
             "description": "prize id -> project id; omitted prizes get the suggested winner, an empty string leaves a prize unawarded",
             "title": "Awards"
+          },
+          "groups_reason": {
+            "default": "",
+            "description": "required when the judges fall into groups that share no projects: why one ranking across them is fair; signed into the record",
+            "title": "Groups Reason",
+            "type": "string"
           },
           "reasons": {
             "anyOf": [
@@ -3048,6 +3078,212 @@
           }
         ],
         "summary": "Export Event",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/extensions": {
+      "post": {
+        "description": "Give one team a later deadline for its entry, with a reason. Audited, and listed in the signed results.",
+        "operationId": "grant_extension_api_v1_events__event_id__extensions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not logged in: send a bearer token or a session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Logged in, but this role may not do that"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "No such thing, or not visible to you"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not now: a deadline, a lock, or a conflicting state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too many attempts; wait and retry"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Grant Extension",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/extensions/{team_id}": {
+      "delete": {
+        "operationId": "revoke_extension_api_v1_events__event_id__extensions__team_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not logged in: send a bearer token or a session cookie"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Logged in, but this role may not do that"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "No such thing, or not visible to you"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Not now: a deadline, a lock, or a conflicting state"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Too many attempts; wait and retry"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Extension",
         "tags": [
           "v1"
         ]

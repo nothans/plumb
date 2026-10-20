@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import certainty %}
+{% block title %}Why it ranked here · {{ project.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="/events/{{ event.id }}">{{ event.name }}</a> / <a href="/projects/{{ project.id }}">{{ project.title }}</a></div>
+  <h1>Why {{ project.title }} ranked where it did</h1>
+  {% if ranked %}
+  <p>Rank <strong>{{ ranked.rank }}</strong> of {{ of }}, adjusted score <strong>{{ ranked.adjusted | num }}</strong>{% if ranked.low is not none %} (90% interval {{ ranked.low | num }} to {{ ranked.high | num }}){% endif %}, from a raw average of {{ ranked.raw_mean | num }}.{% if ranked.p_above_next is not none %} Chance it truly beats the project ranked below: {{ certainty(ranked.p_above_next) }}{% endif %}</p>
+  {% else %}
+  <p>This entry was not ranked (a duplicate, a disqualified entry or a withdrawn draft). Its reviews still helped measure how its judges lean.</p>
+  {% endif %}
+</div></div>
+
+<div class="panel">
+  <h2 class="mt-0">Your reviews</h2>
+  <p class="small muted">Judges are shown as letters, in an order shuffled for this project. Each review's criterion scores are combined with the rubric weights into one number from 0 to 100. Every judge's lean is estimated from all the projects they reviewed, against the other judges who reviewed the same ones; removing it gives what the review counts as. The adjusted score is the model's estimate from all of this, so it is close to, but not exactly, the average of the last column.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Judge</th>{% for c in criteria %}<th class="num col-opt">{{ c.name }}</th>{% endfor %}<th class="num">Combined</th><th class="num">Judge's lean</th><th class="num">Counts as</th></tr></thead>
+    <tbody>{% for r in reviews %}<tr>
+      <td class="nowrap">{{ r.judge }}</td>
+      {% for c in criteria %}<td class="num col-opt">{{ r["values"].get(c.key, '') }}</td>{% endfor %}
+      <td class="num">{{ r.score | num }}</td>
+      <td class="num">{% if r.lean is not none %}{{ '%+.1f' | format(r.lean) }}{% endif %}</td>
+      <td class="num"><strong>{{ r.counts_as | num }}</strong></td>
+    </tr>{% else %}<tr><td colspan="{{ criteria | length + 4 }}" class="muted">No reviews.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="small muted mt-s">A positive lean means the judge scored above other judges on the same projects, so their reviews count for a little less; a negative lean, the other way. Judges' comments go to the organizers only and are not shown here.</p>
+</div>
+<div class="panel">
+  <h2 class="mt-0">How sure the ranking is</h2>
+  {% include "_method.html" %}
+</div>
+{% endblock %}

@@ -10,11 +10,21 @@
   <p class="small muted mt-s">{{ prog.assigned }} assignments, {{ prog.reviewed }} reviewed. {{ prog.unassigned_projects }} projects have no judge.</p>
 </div>
 
-{% set open_work = judges | selectattr('assigned', 'gt', 0) | list %}
-{% if open_work %}
+{% if close_calls %}
+<div class="panel">
+  <h2>Reviews where they decide a prize</h2>
+  <p class="small muted">These prizes are close calls: the reviews cannot yet say which of two projects is better. One more review of each moves the decision more than reviews spread across the field. Judges are chosen by the same rules as automatic assignment.</p>
+  <ul class="small">{% for c in close_calls %}<li><strong>{{ c.prize }}</strong>: {% for p in c.projects %}{{ by_title.get(p, p) }}{% if not loop.last %} or {% endif %}{% endfor %}{% if c.p is not none %} ({{ c.p | pct }}){% endif %}</li>{% endfor %}</ul>
+  <form method="post" action="/events/{{ event.id }}/manage/assignments/prize-line">{{ csrf_field() }}<button type="submit">Add one review to each of these projects</button></form>
+</div>
+{% endif %}
+
+{% set open_work = [] %}{% for j in judges if j.assigned > j.reviewed %}{% set _ = open_work.append(j) %}{% endfor %}
+{% if judges %}
 <div class="panel">
   <h2>Open work by judge</h2>
   <p class="small muted">Automatic assignment counts assignments, not reviews: a judge who has stopped reviewing keeps their projects until you release them here. Releasing never touches a review that was filed.</p>
+  {% if not open_work %}<p class="mb-0">No judge has open work: every assigned project has its review.</p>{% else %}
   <div class="table-wrap"><table>
     <thead><tr><th>Judge</th><th class="num">Reviewed</th><th class="num">Open</th><th></th></tr></thead>
     <tbody>{% for j in open_work %}{% set open = j.assigned - j.reviewed %}<tr>
@@ -23,7 +33,7 @@
         <input type="hidden" name="judge_id" value="{{ j.id }}">
         <button type="submit" aria-label="Release the open assignments of {{ j.name }}">Release {{ open }} open</button></form>{% endif %}</td>
     </tr>{% endfor %}</tbody>
-  </table></div>
+  </table></div>{% endif %}
 </div>
 {% endif %}
 

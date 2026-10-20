@@ -168,3 +168,31 @@ def test_band_and_figure_agree_at_every_boundary(p):
     assert word in html
     f = type("F", (), {"p_better": lambda self, a, b: p})()
     assert award_check(f, "a", ["a", "b"])["close_call"] == (word == "tie")
+
+
+def test_an_unranked_entry_still_calibrates_its_judges():
+    """The harsh judge's only link to the others is a duplicate entry. Left
+    out, their lean cannot be measured; fitted but unranked, it can, and it
+    corrects their other project."""
+    rng = np.random.default_rng(12)
+    quality = {f"p{i}": 50 + 3 * i for i in range(8)}
+    obs = [Observation(j, p, q + rng.normal(0, 1)) for p, q in quality.items() for j in ("a", "b", "c")]
+    obs += [Observation("harsh", "dup", 60 - 20 + rng.normal(0, 1)), Observation("a", "dup", 60 + rng.normal(0, 1)),
+            Observation("b", "dup", 60 + rng.normal(0, 1)),
+            Observation("harsh", "solo", 70 - 20 + rng.normal(0, 1)), Observation("harsh", "solo2", 65 - 20 + rng.normal(0, 1))]
+    ranked = set(quality) | {"solo", "solo2"}
+    with_dup = fit(obs, ranked=ranked)
+    without = fit([o for o in obs if o.project != "dup"])
+    assert [p.project for p in with_dup.calibration_only] == ["dup"]
+    assert "dup" not in {p.project for p in with_dup.projects} and len(with_dup.projects) == 10
+    assert with_dup.components == 1 and without.components == 2
+    assert with_dup.judge("harsh").leniency < -10                  # measured through the duplicate
+    assert with_dup.project("solo").adjusted > without.project("solo").adjusted + 8
+    assert [p.rank for p in with_dup.projects] == list(range(1, 11))
+
+
+def test_the_portal_fits_the_fixture_duplicate_without_ranking_it(db):
+    from app import domain
+    res = domain.compute_results(db, "evt_01")
+    assert [p.project for p in res["fit"].calibration_only] == ["prj_07"]
+    assert "prj_07" not in {p.project for p in res["fit"].projects} and res["fit"].n_observations == 126

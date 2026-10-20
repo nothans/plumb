@@ -4,22 +4,26 @@ demo mode) the seeded fixture event with ready-made logins.
     python -m app.cli bootstrap        # what the container runs before serving
     python -m app.cli create-admin EMAIL NAME   # prompts for a password
     python -m app.cli verify-audit     # recompute the audit hash chain
-    python -m app.cli backup PATH      # consistent copy of the database, safe while running
+    python -m app.cli backup PATH      # consistent, verified copy of the database, safe while running
+    python -m app.cli restore PATH     # put a verified backup back; stop the portal first
+    python -m app.cli doctor           # what to check before an event: settings, database, rules, records, key
     python -m app.cli set-password EMAIL   # reset a forgotten password (prompts), ends their sessions
     python -m app.cli retire-demo      # keep a demo-seeded database's data, end every public demo login
+    python -m app.cli rotate-key       # retire the signing key (still published) and start a new one
 """
 
 from __future__ import annotations
 
 import getpass
 import json
+import os
 import random
-import sqlite3
 import sys
 from datetime import timedelta
+from pathlib import Path
 
-from . import audit, domain, records, transfer
-from .config import Settings, load_settings
+from . import audit, backup, domain, records, transfer
+from .config import Settings, boot_problems, forwarded_problem, load_settings
 from .db import clock_at, connect, init_schema, now, parse_ts, to_ts, transaction
 from .security import MIN_PASSWORD, hash_password, password_problem, token_hash
 from .signing import Signer
@@ -280,6 +284,12 @@ def retire_demo(conn) -> dict:
 
 
 def bootstrap(settings: Settings, out=sys.stdout) -> None:
+    # Before anything touches the database: a refused boot changes nothing.
+    problems = boot_problems(settings)
+    if problem := forwarded_problem(os.environ.get("FORWARDED_ALLOW_IPS"), settings.demo):
+        problems.append(problem)
+    if problems:
+        raise SystemExit("plumb: refusing to start:\n" + "\n".join(f"  - {p}" for p in problems))
     conn = connect(settings.database_path)
     init_schema(conn)
     signer = Signer.load_or_create(settings.signing_key_path)
@@ -379,13 +389,29 @@ def main(argv: list[str]) -> int:
         print(json.dumps(retire_demo(conn)))
         return 0
     if argv[0] == "backup" and len(argv) == 2:
-        src = connect(settings.database_path)
-        dst = sqlite3.connect(argv[1])
-        with dst:
-            src.backup(dst)
-        dst.close()
-        print(f"backed up to {argv[1]}")
+        result = backup.backup(settings, Path(argv[1]))
+        print(f"backed up to {result['path']} and verified: {json.dumps(result['counts'])}")
+        print("keep signing-key.pem (and retired-keys.json, if present) with it: records verify only with their key")
+        if result["warning"]:
+            print(f"warning: {result['warning']}", file=sys.stderr)
         return 0
+    if argv[0] == "restore" and len(argv) == 2:
+        try:
+            result = backup.restore(settings, Path(argv[1]))
+        except backup.RestoreRefused as exc:
+            print(f"plumb: {exc}", file=sys.stderr)
+            return 2
+        print(f"restored {result['restored']}: {json.dumps(result['counts'])}")
+        if result["kept"]:
+            print(f"the database it replaced is kept at {result['kept']}")
+        if result["warning"]:
+            print(f"warning: {result['warning']}", file=sys.stderr)
+        return 0
+    if argv[0] == "doctor" and len(argv) == 1:
+        checks = backup.doctor(settings)
+        for name, ok, detail in checks:
+            print(f"{'ok  ' if ok else 'FIX '} {name:<12} {detail}")
+        return 0 if all(ok for _, ok, _ in checks) else 2
     if argv[0] == "verify-audit":
         conn = connect(settings.database_path)
         result = audit.verify_chain(conn)

@@ -114,7 +114,8 @@ def _settings_page(request: Request, event_id: str, form=None, error=None, statu
                   form=form or {**dict(event), "prizes": "\n".join(
                       " | ".join([p["name"], p["description"] or ""] + ([p["track_name"]] if p["track_name"] else []))
                       .rstrip(" |") for p in prizes)},
-                  tracks=domain.tracks(conn, event_id), error=error)
+                  tracks=domain.tracks(conn, event_id), error=error, extensions=domain.extensions(conn, event_id),
+                  teams=conn.execute("SELECT id, name FROM teams WHERE event_id = ? ORDER BY name", (event_id,)).fetchall())
 
 
 @router.post("/events/{event_id}/manage/archive")
@@ -123,6 +124,19 @@ def archive(request: Request, event_id: str, data: dict = Depends(form_body)):
     domain.set_archived(conn_for(request), actor(request), event_id, archived)
     return redirect(f"/events/{event_id}", "Archived: the event has left the home page and the gallery. Its links still work."
                     if archived else "Restored to the home page and the gallery.")
+
+
+@router.post("/events/{event_id}/manage/extensions")
+def grant_extension(request: Request, event_id: str, data: dict = Depends(form_body)):
+    domain.grant_extension(conn_for(request), actor(request), event_id, str(data.get("team_id", "")),
+                           str(data.get("until", "")), str(data.get("reason", "")))
+    return redirect(f"/events/{event_id}/manage/settings#extensions", "Extension granted. It is in the audit log and will be in the signed results.")
+
+
+@router.post("/events/{event_id}/manage/extensions/{team_id}/revoke")
+def revoke_extension(request: Request, event_id: str, team_id: str, _: dict = Depends(form_body)):
+    domain.revoke_extension(conn_for(request), actor(request), event_id, team_id)
+    return redirect(f"/events/{event_id}/manage/settings#extensions", "Extension revoked.")
 
 
 @router.get("/events/{event_id}/manage/settings", response_class=HTMLResponse)
@@ -220,8 +234,12 @@ def assignments(request: Request, event_id: str):
     by_project: dict[str, list] = {}
     for r in rows:
         by_project.setdefault(r["project_id"], []).append(r)
-    return render(request, "organizer/assignments.html", event=domain.get_event(conn, event_id), prog=prog,
-                  by_project=by_project, judges=prog["judges"],
+    event = domain.get_event(conn, event_id)
+    res = domain.compute_results(conn, event_id)
+    return render(request, "organizer/assignments.html", event=event, prog=prog,
+                  by_project=by_project, judges=prog["judges"], by_title={p["id"]: p["title"] for p in prog["projects"]},
+                  close_calls=domain.close_call_candidates(conn, event_id, res)
+                  if res["fit"].identifiable and not event["results_published_at"] else [],
                   tracks={t["id"]: t["name"] for t in domain.tracks(conn, event_id)})
 
 
@@ -232,6 +250,14 @@ def auto(request: Request, event_id: str, _: dict = Depends(form_body)):
     if result["short"]:
         note += f" {len(result['short'])} projects are still short of the target; see the list."
     return redirect(f"/events/{event_id}/manage/assignments", note)
+
+
+@router.post("/events/{event_id}/manage/assignments/prize-line")
+def prize_line(request: Request, event_id: str, _: dict = Depends(form_body)):
+    out = domain.assign_prize_line(conn_for(request), actor(request), event_id)
+    short = f" {len(out['short'])} could not get one (no eligible judge left)." if out["short"] else ""
+    return redirect(f"/events/{event_id}/manage/assignments",
+                    f"Added {out['added']} reviews to the {len(out['projects'])} projects the close calls hang on.{short}")
 
 
 @router.post("/events/{event_id}/manage/assignments/release")
@@ -316,7 +342,7 @@ def publish(request: Request, event_id: str, data: dict = Depends(form_body)):
     awards = {k[len("award_"):]: str(v) for k, v in data.items() if k.startswith("award_")}
     reasons = {k[len("reason_"):]: str(v) for k, v in data.items() if k.startswith("reason_")}
     out = records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
-                                  signing_base_url(request), awards, reasons)
+                                  signing_base_url(request), awards, reasons, str(data.get("groups_reason", "")))
     return redirect(f"/events/{event_id}/results",
                     f"Results published with {out['judge_records']} judge records and {out['team_records']} team certificates, all signed.")
 
@@ -400,8 +426,8 @@ def add_webhook(request: Request, event_id: str, data: dict = Depends(form_body)
     conn = conn_for(request)
     try:
         hook = domain.create_webhook(conn, actor(request), event_id, str(data.get("url", "")), check_destination)
-    except domain.Invalid as exc:
-        return render(request, "organizer/integrations.html", status_code=422, event=domain.get_event(conn, event_id),
+    except (domain.Invalid, domain.Conflict) as exc:
+        return render(request, "organizer/integrations.html", status_code=exc.status, event=domain.get_event(conn, event_id),
                       hooks=domain.webhooks_for(conn, actor(request), event_id), new_secret=None, error=exc.message)
     return render(request, "organizer/integrations.html", event=domain.get_event(conn, event_id),
                   hooks=domain.webhooks_for(conn, actor(request), event_id), new_secret=hook["secret"])

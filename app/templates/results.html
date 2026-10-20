@@ -29,6 +29,11 @@
 </div>
 {% endif %}
 
+{% set reg = res.body.method.registered %}
+{% if reg %}<p class="small">The judging method was registered {{ reg.at | ts }}, before the ranking existed (<a href="/events/{{ event.id }}/method.json">method</a>, sha256 <code class="hash">{{ reg.sha256 }}</code>). {% if res.body.method.matches_registered %}These results were produced by exactly that method.{% else %}<strong>These results were produced by a different method</strong> (sha256 <code class="hash">{{ res.body.method.sha256 }}</code>); the signed record holds both.{% endif %}</p>{% endif %}
+{% if res.body.method.across_groups_reason %}
+<div class="alert warn">The judges fell into {{ res.body.method.graph_components }} groups that shared no projects, so judge lean could not be compared across them. The organizers ranked across them anyway, and said why: {{ res.body.method.across_groups_reason }}</div>
+{% endif %}
 <div class="panel">
   <h2>How to read this</h2>
   {% include "_method.html" %}

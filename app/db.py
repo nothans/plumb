@@ -1,5 +1,6 @@
 """SQLite access: one connection per request, explicit transactions."""
 
+import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -8,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA = Path(__file__).with_name("schema.sql")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Numbered migrations for databases created by an older version. schema.sql
 # always describes the current shape (and is idempotent), so a new database
@@ -27,6 +28,7 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE audit_log ADD COLUMN event_prev TEXT",
     ],
     6: ["ALTER TABLE events ADD COLUMN archived_at TEXT"],
+    7: ["ALTER TABLE events ADD COLUMN method_json TEXT", "ALTER TABLE events ADD COLUMN method_hash TEXT"],
 }
 
 
@@ -82,6 +84,38 @@ class NewerDatabase(RuntimeError):
     pass
 
 
+class RulesChanged(RuntimeError):
+    pass
+
+
+def _norm(sql: str) -> str:
+    sql = re.sub(r"\s+", " ", sql).strip().rstrip(";").strip()
+    return sql.replace("CREATE TRIGGER IF NOT EXISTS ", "CREATE TRIGGER ", 1)
+
+
+def schema_triggers() -> dict[str, str]:
+    """The triggers schema.sql defines, by name, normalized."""
+    return {m.group(1): _norm(m.group(0)) for m in re.finditer(
+        r"CREATE TRIGGER IF NOT EXISTS (\w+) .*?\bEND;", SCHEMA.read_text(encoding="utf-8"), re.S)}
+
+
+def check_rules(conn: sqlite3.Connection, *, missing_ok: bool = False) -> None:
+    """Refuse to run if a rule trigger in the database is not the one
+    schema.sql defines. A missing one is recreated by the schema on every
+    boot; one that was dropped and recreated weaker under the same name
+    would not be, so it is compared here, text against text. missing_ok is
+    for a database not yet booted by this version (a backup being
+    restored), whose next boot adds what it lacks."""
+    held = {name: _norm(sql) for name, sql in conn.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")}
+    changed = sorted(name for name, sql in schema_triggers().items()
+                     if held.get(name) != sql and not (missing_ok and name not in held))
+    if changed:
+        raise RulesChanged("the database's rule triggers differ from this version's: " + ", ".join(changed)
+                           + ". Someone changed them by hand; restore a backup, or recreate them from app/schema.sql "
+                           "after finding out why.")
+
+
 def _backup_before_migrating(conn: sqlite3.Connection, current: int) -> Path | None:
     """Copy the database aside before the first migration touches it, so an
     upgrade that goes wrong can be undone by putting the copy back."""
@@ -121,6 +155,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
                 conn.execute("ROLLBACK")
                 raise
     conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+    check_rules(conn)
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO NOTHING",
         (str(SCHEMA_VERSION),),

@@ -1,9 +1,11 @@
 """Webhook delivery: the audit log, streamed.
 
-A background thread walks each webhook's cursor forward through its event's
-audit entries and POSTs them one at a time, in order. A failure stops that
-hook where it is and retries with exponential backoff (capped at ten
-minutes), so a receiver never sees entry n+1 before entry n.
+Each webhook gets its own delivery thread, which walks the hook's cursor
+forward through its event's audit entries and POSTs them one at a time, in
+order. A failure stops that hook where it is and retries with exponential
+backoff (capped at ten minutes), so a receiver never sees entry n+1 before
+entry n. Hooks never wait on each other: a receiver that is slow, or that
+fails, only delays its own stream.
 
 Body: the audit entry as JSON. Header X-Plumb-Signature: sha256=<hex HMAC
 of the exact body bytes, keyed with the hook's secret>.
@@ -15,8 +17,7 @@ Safety:
   check and the connect cannot redirect a delivery inside the network.
 * Redirects are not followed.
 * Every delivery has a hard wall-clock deadline. A receiver that trickles
-  its response forever costs one deadline, then backs off; it cannot hold
-  up the other hooks.
+  its response forever costs one deadline, then backs off.
 """
 
 from __future__ import annotations
@@ -173,55 +174,87 @@ class Deliverer:
         self.deadline = deadline
         self.retry_at: dict[str, float] = {}
         self.failures: dict[str, int] = {}
-        self.stuck: dict[str, threading.Thread] = {}  # a timed-out delivery still hanging on
+        self.stuck: dict[str, threading.Thread] = {}    # a timed-out delivery still hanging on
+        self.workers: dict[str, threading.Thread] = {}  # one delivery thread per hook, at most
 
-    def run_once(self, batch: int = 50) -> int:
-        """Deliver what is due. Returns how many entries were delivered."""
+    def run_once(self, batch: int = 50, wait: bool = True) -> int:
+        """Start delivering what is due, one thread per hook. With wait, block
+        until those threads finish and return how many entries they delivered
+        (the tests); without, return at once (the background loop, which
+        skips a hook whose thread is still busy)."""
         conn = connect(self.db_path)
-        delivered = 0
         try:
-            for hook in conn.execute("SELECT * FROM webhooks").fetchall():
-                hid = hook["id"]
-                if time.monotonic() < self.retry_at.get(hid, 0):
-                    continue
-                if hid in self.stuck:
-                    if self.stuck[hid].is_alive():
-                        continue  # never two requests in flight to one receiver
-                    del self.stuck[hid]
-                rows = conn.execute(
-                    "SELECT * FROM audit_log WHERE event_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-                    (hook["event_id"], hook["cursor"], batch),
-                ).fetchall()
-                for row in rows:
-                    body = json.dumps(payload(row), separators=(",", ":")).encode()
-                    headers = {"Content-Type": "application/json", "User-Agent": "Plumb-Webhook/1",
-                               "X-Plumb-Event": row["action"], "X-Plumb-Signature": sign(hook["secret"], body)}
-                    status, error, hanging = _with_deadline(
-                        lambda url=hook["url"], b=body, h=headers: self.send(url, b, h), self.deadline)
-                    if hanging is not None:
-                        self.stuck[hid] = hanging
-                    ok = error is None and status is not None and 200 <= status < 300
-                    if not ok and error is None:
-                        error = f"HTTP {status}"
-                    attempts = self.failures.get(hid, 0) + 1
-                    conn.execute(
-                        "INSERT INTO webhook_deliveries(webhook_id, audit_seq, status, attempts, last_error, updated_at) "
-                        "VALUES (?,?,?,?,?,?) ON CONFLICT(webhook_id, audit_seq) DO UPDATE SET "
-                        "status = excluded.status, attempts = excluded.attempts, last_error = excluded.last_error, "
-                        "updated_at = excluded.updated_at",
-                        (hid, row["seq"], "delivered" if ok else "failed", attempts, error, now()),
-                    )
-                    if not ok:
-                        self.failures[hid] = attempts
-                        self.retry_at[hid] = time.monotonic() + min(MAX_BACKOFF, 2.0 ** attempts)
-                        break
-                    self.failures.pop(hid, None)
-                    self.retry_at.pop(hid, None)
-                    conn.execute("UPDATE webhooks SET cursor = ? WHERE id = ?", (row["seq"], hid))
-                    delivered += 1
+            hooks = [h["id"] for h in conn.execute("SELECT id FROM webhooks").fetchall()]
         finally:
             conn.close()
-        return delivered
+        started, counts = [], []
+        for hid in hooks:
+            if time.monotonic() < self.retry_at.get(hid, 0):
+                continue
+            if hid in self.stuck:
+                if self.stuck[hid].is_alive():
+                    continue  # never two requests in flight to one receiver
+                del self.stuck[hid]
+            if hid in self.workers and self.workers[hid].is_alive():
+                continue
+            box = [0]
+            t = threading.Thread(target=self._deliver_hook, args=(hid, batch, box), name=f"plumb-webhook-{hid}",
+                                 daemon=True)
+            self.workers[hid] = t
+            t.start()
+            started.append(t)
+            counts.append(box)
+        if not wait:
+            return 0
+        for t in started:
+            t.join()
+        return sum(box[0] for box in counts)
+
+    def _deliver_hook(self, hid: str, batch: int, box: list[int]) -> None:
+        try:
+            self._deliver(hid, batch, box)
+        except Exception:  # a worker must never die silently; the next pass retries
+            logging.getLogger("plumb.webhooks").exception("webhook %s: delivery failed", hid)
+
+    def _deliver(self, hid: str, batch: int, box: list[int]) -> None:
+        conn = connect(self.db_path)
+        try:
+            hook = conn.execute("SELECT * FROM webhooks WHERE id = ?", (hid,)).fetchone()
+            if hook is None:
+                return  # deleted since the pass started
+            rows = conn.execute(
+                "SELECT * FROM audit_log WHERE event_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+                (hook["event_id"], hook["cursor"], batch),
+            ).fetchall()
+            for row in rows:
+                body = json.dumps(payload(row), separators=(",", ":")).encode()
+                headers = {"Content-Type": "application/json", "User-Agent": "Plumb-Webhook/1",
+                           "X-Plumb-Event": row["action"], "X-Plumb-Signature": sign(hook["secret"], body)}
+                status, error, hanging = _with_deadline(
+                    lambda url=hook["url"], b=body, h=headers: self.send(url, b, h), self.deadline)
+                if hanging is not None:
+                    self.stuck[hid] = hanging
+                ok = error is None and status is not None and 200 <= status < 300
+                if not ok and error is None:
+                    error = f"HTTP {status}"
+                attempts = self.failures.get(hid, 0) + 1
+                conn.execute(
+                    "INSERT INTO webhook_deliveries(webhook_id, audit_seq, status, attempts, last_error, updated_at) "
+                    "VALUES (?,?,?,?,?,?) ON CONFLICT(webhook_id, audit_seq) DO UPDATE SET "
+                    "status = excluded.status, attempts = excluded.attempts, last_error = excluded.last_error, "
+                    "updated_at = excluded.updated_at",
+                    (hid, row["seq"], "delivered" if ok else "failed", attempts, error, now()),
+                )
+                if not ok:
+                    self.failures[hid] = attempts
+                    self.retry_at[hid] = time.monotonic() + min(MAX_BACKOFF, 2.0 ** attempts)
+                    break
+                self.failures.pop(hid, None)
+                self.retry_at.pop(hid, None)
+                conn.execute("UPDATE webhooks SET cursor = ? WHERE id = ?", (row["seq"], hid))
+                box[0] += 1
+        finally:
+            conn.close()
 
 
 def start(db_path: Path, interval: float = 2.0) -> threading.Event:
@@ -232,7 +265,7 @@ def start(db_path: Path, interval: float = 2.0) -> threading.Event:
     def loop() -> None:
         while not stop.is_set():
             try:
-                deliverer.run_once()
+                deliverer.run_once(wait=False)
             except Exception:  # never let the thread die; the next pass retries
                 logging.getLogger("plumb.webhooks").exception("webhook delivery pass failed")
             stop.wait(interval)

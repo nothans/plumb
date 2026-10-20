@@ -117,14 +117,15 @@ def fixture_section(fx: dict) -> str:
         "spread to zero (centering or z-scoring each judge) erases real differences between the projects each judge "
         "was assigned along with the lean; Part 2 measures what that costs.",
         "",
-        "Every project, raw against normalized (0-100 scale, 121 reviews; \"beats next\" is the calibrated chance "
-        "a project truly outranks the one below it):",
+        "Every ranked project, raw against normalized, fitted as the portal fits it (0-100 scale, all 126 reviews: "
+        "the superseded duplicate prj_07 is not ranked, but its 5 reviews still show how its judges lean; \"beats "
+        "next\" is the calibrated chance a project truly outranks the one below it):",
         "",
         "| rank | raw rank | move | project | reviews | raw | adjusted | 90% interval | beats next |",
         "|---:|---:|---:|---|---:|---:|---:|---|---:|",
     ]
-    scores = [s for s in fx["scores"] if s["project"] != "prj_07"]
-    f = fit([Observation(s["judge"], s["project"], combine(s["criteria"], crit)) for s in scores])
+    f = fit([Observation(s["judge"], s["project"], combine(s["criteria"], crit)) for s in fx["scores"]],
+            ranked={p["id"] for p in fx["projects"]} - {DUPLICATE})
     for p in f.projects:
         move = p.raw_rank - p.rank
         lines.append(f"| {p.rank} | {p.raw_rank} | {move:+d} | {titles[p.project]} ({p.project}) | {p.n_reviews} | "
@@ -147,10 +148,14 @@ def fixture() -> dict:
     return json.loads((ROOT / "fixtures.json").read_text(encoding="utf-8"))
 
 
+# The earlier of the team's two "Dry Harbour" entries. Plumb ranks the later
+# one; the earlier one's reviews stay in the fit to calibrate their judges,
+# so the simulation keeps them too and scores every method on the rest.
+DUPLICATE = "prj_07"
+
+
 def design(fx: dict) -> tuple[list[tuple[str, str]], dict[str, str]]:
-    # prj_07 is the earlier of the team's two "Dry Harbour" entries; Plumb
-    # counts the later one, so the earlier one's reviews are left out.
-    pairs = [(s["judge"], s["project"]) for s in fx["scores"] if s["project"] != "prj_07"]
+    pairs = [(s["judge"], s["project"]) for s in fx["scores"]]
     track = {p["id"]: p["track"] for p in fx["projects"]}
     return pairs, track
 
@@ -203,14 +208,15 @@ def evaluate(draws: int, seed: int, scenarios=SCENARIOS) -> dict:
         coverage, stated = [], []
         calib = []  # (stated P(beats next), 1 if the true order agrees)
         for _ in range(draws):
-            projects, truth, obs = simulate(pairs, track_of, rng, scenario)
+            fitted, truth, obs = simulate(pairs, track_of, rng, scenario)
+            projects = [p for p in fitted if p != DUPLICATE]
             t = np.array([truth[p] for p in projects])
-            f = fit(obs)
+            f = fit(obs, ranked=set(projects))
             est = {
                 "raw": raw_means(obs),
                 "zscore": zscore_means(obs),
                 "plumb": {r.project: r.adjusted for r in f.projects},
-                "pairwise": {r.project: r.strength for r in pairwise.fit(pairwise.implied(obs), projects).strengths},
+                "pairwise": {r.project: r.strength for r in pairwise.fit(pairwise.implied(obs), fitted).strengths},
             }
             for m, e in est.items():
                 v = np.array([e[p] for p in projects])
@@ -257,7 +263,7 @@ def report(res: dict, draws: int, seed: int) -> str:
         "## Part 2: simulation with known ground truth",
         "",
         f"{draws} draws per scenario, seed {seed}, on the fixture's judge-project graph "
-        "(122 reviews, 40 projects, 30 judges, the duplicate's reviews left out; "
+        "(126 reviews, 30 judges, 40 ranked projects; the superseded duplicate is fitted, not scored; "
         "true project sd 12, judge lean sd 8, noise sd 10).",
         "",
         "| scenario | method | rmse | spearman | vs raw (95% MC interval) | true top 5 found | 90% coverage | as stated |",

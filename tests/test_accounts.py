@@ -224,3 +224,123 @@ def test_demo_passwords_cannot_be_changed(organizer):
     assert "cannot be changed here" in organizer.get("/me").text
     r = post_form(organizer, "/me/password", {"current": "plumb-demo-2026", "password": "a brand new password"})
     assert r.status_code == 409
+
+
+# --- deadline extensions ---------------------------------------------------------------------
+
+
+def test_a_team_extension_reopens_only_that_teams_entry(organizer, participant, db):
+    from .conftest import ts
+    team, project = db.execute(
+        "SELECT t.id, p.id FROM teams t JOIN team_members m ON m.team_id = t.id JOIN users u ON u.id = m.user_id "
+        "JOIN projects p ON p.team_id = t.id AND p.duplicate_of IS NULL "
+        "WHERE t.event_id = ? AND u.email = 'priya1@example.org'", (FIX,)).fetchone()
+    db.execute("DELETE FROM comparisons WHERE project_a = ? OR project_b = ?", (project, project))
+    db.execute("DELETE FROM reviews WHERE project_id = ?", (project,))
+    db.commit()
+    edit = {"title": "Glass Signal, fixed", "summary": "One line.", "description": "", "repo_url": "", "demo_url": ""}
+    assert post_form(participant, f"/projects/{project}/edit", edit).status_code == 409     # the event has closed
+    # Refused: before the event's own deadline, without a reason.
+    close = db.execute("SELECT submissions_close FROM events WHERE id = ?", (FIX,)).fetchone()[0]
+    assert organizer.post(f"/api/v1/events/{FIX}/extensions",
+                          json={"team_id": team, "until": close, "reason": "x"}).status_code == 422
+    assert organizer.post(f"/api/v1/events/{FIX}/extensions",
+                          json={"team_id": team, "until": ts(6), "reason": ""}).status_code == 422
+    r = organizer.post(f"/api/v1/events/{FIX}/extensions", json={"team_id": team, "until": ts(6), "reason": "power cut"})
+    assert r.status_code == 204
+    page = participant.get(f"/events/{FIX}/team").text
+    assert "Your team has an extension until" in page and "power cut" in page
+    assert post_form(participant, f"/projects/{project}/edit", edit).status_code == 303
+    assert db.execute("SELECT title FROM projects WHERE id = ?", (project,)).fetchone()[0] == "Glass Signal, fixed"
+    # The team itself stays as it was at the close.
+    assert participant.post(f"/api/v1/teams/{team}/leave").status_code == 409
+    # Once a judge reviews it, the entry is final again.
+    judge = db.execute("SELECT judge_id FROM assignments WHERE project_id = ? LIMIT 1", (project,)).fetchone()[0]
+    db.execute("INSERT INTO reviews(id, event_id, judge_id, project_id, submitted_at, updated_at) VALUES "
+               "('rev_x', ?, ?, ?, ?, ?)", (FIX, judge, project, ts(0), ts(0)))
+    db.commit()
+    r = post_form(participant, f"/projects/{project}/edit", edit)
+    assert r.status_code == 409 and "already reviewed" in r.text
+    actions = [a[0] for a in db.execute("SELECT action FROM audit_log WHERE subject = ?", (team,))]
+    assert "team.extension_granted" in actions
+    assert organizer.delete(f"/api/v1/events/{FIX}/extensions/{team}").status_code == 204
+
+
+def test_extensions_are_signed_into_the_results(organizer, db):
+    from .conftest import ts
+    from .test_round2 import set_event
+    team = db.execute("SELECT id FROM teams WHERE event_id = ? ORDER BY id LIMIT 1", (FIX,)).fetchone()[0]
+    assert organizer.post(f"/api/v1/events/{FIX}/extensions",
+                          json={"team_id": team, "until": ts(6), "reason": "venue wifi failed"}).status_code == 204
+    set_event(db, FIX, voting_open=ts(-48), voting_close=ts(-1))
+    assert organizer.post(f"/api/v1/events/{FIX}/publish").status_code == 200
+    import json
+    body = json.loads(db.execute("SELECT payload FROM records WHERE event_id = ? AND kind = 'results'", (FIX,)).fetchone()[0])
+    assert body["extensions"] == [{"team": team, "until": body["extensions"][0]["until"], "reason": "venue wifi failed"}]
+    assert organizer.delete(f"/api/v1/events/{FIX}/extensions/{team}").status_code == 409   # final after publication
+
+
+def test_extra_reviews_go_to_the_projects_a_close_call_hangs_on(organizer, db):
+    from app import assign, domain
+
+    from .test_round2 import _with_prizes
+    _with_prizes(db)
+    db.commit()
+    calls = domain.close_call_candidates(db, FIX)
+    targets = sorted({p for c in calls for p in c["projects"]})
+    assert calls and len(targets) >= 2
+    count = lambda p: db.execute("SELECT COUNT(*) FROM assignments WHERE project_id = ?", (p,)).fetchone()[0]  # noqa: E731
+    before = {p: count(p) for p in targets}
+    total_before = db.execute("SELECT COUNT(*) FROM assignments WHERE event_id = ?", (FIX,)).fetchone()[0]
+    assert "Reviews where they decide a prize" in organizer.get(f"/events/{FIX}/manage/assignments").text
+    r = post_form(organizer, f"/events/{FIX}/manage/assignments/prize-line", {}, csrf_from=f"/events/{FIX}/manage/assignments")
+    assert r.status_code == 303
+    import json
+    short = json.loads(db.execute("SELECT detail FROM audit_log WHERE action = 'assignments.prize_line'").fetchone()[0])["short"]
+    gained = {p: count(p) - before[p] for p in targets}
+    # One more each, unless no qualified judge without a conflict is left in its track, which is reported.
+    assert all(gained[p] == 1 or (gained[p] == 0 and "no qualified" in short[p]) for p in targets), (gained, short)
+    assert sum(gained.values()) >= 1
+    total_after = db.execute("SELECT COUNT(*) FROM assignments WHERE event_id = ?", (FIX,)).fetchone()[0]
+    assert total_after - total_before == sum(gained.values())    # and nowhere else
+    from app.domain.judging import _assignment_inputs
+    js, ps, _ = _assignment_inputs(db, FIX)
+    judges, projects = {j.id: j for j in js}, {p.id: p for p in ps}
+    newest = db.execute("SELECT judge_id, project_id FROM assignments WHERE event_id = ? ORDER BY created_at DESC, "
+                        "rowid DESC LIMIT ?", (FIX, sum(gained.values()))).fetchall()
+    for j, p in newest:                                           # the same rules as automatic assignment
+        assert assign.conflict(judges[j], projects[p]) is None and assign.qualified(judges[j], projects[p])
+
+
+def test_a_team_sees_why_it_ranked_where_it_did(app, db):
+    from .conftest import client_for
+    # A team of the published replay event: log in as one of its members.
+    member, project = db.execute(
+        "SELECT u.id, p.id FROM projects p JOIN team_members m ON m.team_id = p.team_id JOIN users u ON u.id = m.user_id "
+        "WHERE p.event_id = 'evt_replay' AND p.duplicate_of IS NULL AND p.status = 'submitted' ORDER BY p.id LIMIT 1").fetchone()
+    from app.security import new_token, token_hash
+    token = new_token()
+    db.execute("INSERT INTO sessions(token_hash, user_id, csrf, created_at, expires_at) VALUES (?, ?, 'x', "
+               "'2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')", (token_hash(token), member))
+    db.commit()
+    team = client_for(app)
+    team.cookies.set("plumb_session", token)
+    page = team.get(f"/projects/{project}/explain")
+    assert page.status_code == 200 and "Why" in page.text and "Judge A" in page.text and "Counts as" in page.text
+    judges = [r[0] for r in db.execute("SELECT u.name FROM reviews v JOIN users u ON u.id = v.judge_id "
+                                       "WHERE v.project_id = ?", (project,))]
+    assert judges and not any(name in page.text for name in judges)           # anonymous
+    comments = [r[0] for r in db.execute("SELECT comment FROM reviews WHERE project_id = ? AND comment <> ''", (project,))]
+    assert not any(c in page.text for c in comments)                          # comments stay with the organizers
+    other = client_for(app, "participant")                                    # not on that team
+    assert other.get(f"/projects/{project}/explain").status_code == 403
+    unpublished = db.execute("SELECT id FROM projects WHERE event_id = 'evt_01' LIMIT 1").fetchone()[0]
+    assert client_for(app, "organizer").get(f"/projects/{unpublished}/explain").status_code == 403
+
+
+def test_a_new_claim_link_ends_the_earlier_one(app, organizer, db):
+    _, first, _ = _claim_link(organizer, db)
+    _, second, _ = _claim_link(organizer, db)
+    assert first != second
+    assert client_for(app).get(first).status_code == 404
+    assert client_for(app).get(second).status_code == 200

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 
 from .. import audit
 from ..db import new_id, now, transaction
 from .core import (
     Actor,
+    Conflict,
     Invalid,
     NotFound,
     clean_url,
@@ -27,6 +29,11 @@ def webhooks_for(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -
     return out
 
 
+# Each hook is a delivery thread and one outbound request per audit entry, so
+# an event's organizers get a handful, not an amplifier.
+MAX_WEBHOOKS = 10
+
+
 def create_webhook(conn: sqlite3.Connection, actor: Actor | None, event_id: str, url: str, check) -> dict:
     """check(url) raises ValueError/OSError for a destination that is not allowed."""
     actor = require_organizer(conn, event_id, actor)
@@ -37,9 +44,10 @@ def create_webhook(conn: sqlite3.Connection, actor: Actor | None, event_id: str,
         check(url)
     except (ValueError, OSError) as exc:
         raise Invalid(f"webhook url refused: {exc}") from exc
-    import secrets as _secrets
-    hid, secret = new_id("whk"), _secrets.token_hex(24)
+    hid, secret = new_id("whk"), secrets.token_hex(24)
     with transaction(conn):
+        if conn.execute("SELECT COUNT(*) FROM webhooks WHERE event_id = ?", (event_id,)).fetchone()[0] >= MAX_WEBHOOKS:
+            raise Conflict(f"an event can have at most {MAX_WEBHOOKS} webhooks; delete one first")
         conn.execute(
             "INSERT INTO webhooks(id, event_id, url, secret, cursor, created_by, created_at) VALUES (?,?,?,?,?,?,?)",
             (hid, event_id, url, secret, audit.head(conn)["seq"], actor.id, now()),

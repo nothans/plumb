@@ -36,8 +36,8 @@
   </form>
   {% if not event.results_published_at and not event.rubric_locked_at %}
   <form class="mt-m" method="post" action="/events/{{ event.id }}/manage/rubric/lock">{{ csrf_field() }}
-    <p class="small muted">Lock the rubric when judging opens, so nobody (you included) can reweight it after seeing the live ranking. This cannot be undone.</p>
-    <button type="submit">Lock the rubric</button>
+    <p class="small muted">Lock the rubric when judging opens, so nobody (you included) can reweight it after seeing the live ranking. Locking also registers the whole judging method (weights, model, thresholds, tie rule) and publishes its hash on the event page; the signed results will say whether the method that produced them is the registered one. This cannot be undone.</p>
+    <button type="submit">Lock the rubric and register the method</button>
   </form>
   {% endif %}
 </div>

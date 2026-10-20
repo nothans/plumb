@@ -11,11 +11,13 @@
   <div>
     <div class="panel">
       <h2>Your project</h2>
+      {% if entry.extension %}<div class="notice" role="status">Your team has an extension until {{ entry.extension.until | ts }}: {{ entry.extension.reason }}. Only your entry can change; the team's members are fixed. Once a judge reviews it, it is final.</div>{% endif %}
       {% if project %}
         <p><a href="/projects/{{ project.id }}"><strong>{{ project.title }}</strong></a> <span class="tag {{ 'ok' if project.status == 'submitted' else 'warn' }}">{{ project.status }}</span></p>
-        {% if project.submitted_at %}<p class="small">Submitted {{ project.submitted_at | ts }}{% if phase.submissions == 'closed' %}, before the {{ event.submissions_close | ts }} close. The entry is final.{% else %}. You can edit until {{ event.submissions_close | ts }}.{% endif %}</p>{% endif %}
-        {% if phase.submissions == 'open' %}<a class="btn primary" href="/projects/{{ project.id }}/edit">Edit project</a>{% endif %}
-      {% elif phase.submissions == 'open' %}
+        {% if project.submitted_at %}<p class="small">Submitted {{ project.submitted_at | ts }}{% if entry.state == 'closed' %}, before the {{ entry.closes | ts }} close. The entry is final.{% else %}. You can edit until {{ entry.closes | ts }}.{% endif %}</p>{% endif %}
+        {% if entry.state == 'open' %}<a class="btn primary" href="/projects/{{ project.id }}/edit">Edit project</a>{% endif %}
+        {% if event.results_published_at %}<a class="btn" href="/projects/{{ project.id }}/explain">Why it ranked where it did</a>{% endif %}
+      {% elif entry.state == 'open' %}
         <p>Nothing yet. Start a draft; only your team sees it until you submit.</p>
         <a class="btn primary" href="/events/{{ event.id }}/projects/new">Start your project</a>
       {% else %}
@@ -24,7 +26,7 @@
     </div>
     <div class="panel">
       <h2>Members <span class="muted small">{{ members | length }} of at most {{ event.max_team_size }}</span></h2>
-      <table><tbody>{% for m in members %}<tr><td>{{ m.name }}</td><td class="muted">{{ m.email }}</td><td class="muted small">joined {{ m.joined_at | ts }}</td></tr>{% endfor %}</tbody></table>
+      <div class="table-wrap"><table><tbody>{% for m in members %}<tr><td>{{ m.name }}<br><span class="muted small">{{ m.email }}</span></td><td class="muted small col-opt">joined {{ m.joined_at | ts }}</td></tr>{% endfor %}</tbody></table></div>
     </div>
   </div>
   <aside>

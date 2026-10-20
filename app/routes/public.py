@@ -8,7 +8,7 @@ import json
 import math
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .. import domain, ratelimit, records
 from ..web import actor, conn_for, form_body, redirect, render
@@ -210,6 +210,22 @@ def verify_post(request: Request, data: dict = Depends(form_body)):
     except ValueError:
         result = {"ok": False, "reason": "that is not JSON; paste the whole envelope from a record's \"Download envelope\" link"}
     return render(request, "verify.html", result=result, pasted=pasted)
+
+
+@router.get("/projects/{project_id}/explain", response_class=HTMLResponse)
+def explain(request: Request, project_id: str):
+    return render(request, "explain.html", **domain.explain_ranking(conn_for(request), actor(request), project_id))
+
+
+@router.get("/events/{event_id}/method.json")
+def registered_method(request: Request, event_id: str):
+    """The judging method registered when the rubric was locked, byte for
+    byte as hashed: sha256 of this body is the hash on the event page."""
+    event = domain.get_event(conn_for(request), event_id)
+    if not event["method_json"]:
+        raise domain.NotFound("this event has not registered its judging method yet (it does when the rubric is locked)")
+    return Response(event["method_json"], media_type="application/json",
+                    headers={"X-Plumb-Method-Sha256": event["method_hash"]})
 
 
 @router.get("/.well-known/plumb-key.json")

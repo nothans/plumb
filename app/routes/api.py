@@ -259,6 +259,23 @@ def list_events(request: Request, archived: bool = False):
     return [_event(conn, e) for e in domain.list_events(conn, archived=archived)]
 
 
+class ExtensionIn(BaseModel):
+    team_id: str
+    until: str = Field(..., description="ISO 8601, UTC; after the event's deadline, before judging closes")
+    reason: str
+
+
+@v1.post("/events/{event_id}/extensions", status_code=204)
+def grant_extension(request: Request, event_id: str, data: ExtensionIn):
+    """Give one team a later deadline for its entry, with a reason. Audited, and listed in the signed results."""
+    domain.grant_extension(conn_for(request), actor(request), event_id, data.team_id, data.until, data.reason)
+
+
+@v1.delete("/events/{event_id}/extensions/{team_id}", status_code=204)
+def revoke_extension(request: Request, event_id: str, team_id: str):
+    domain.revoke_extension(conn_for(request), actor(request), event_id, team_id)
+
+
 @v1.post("/events/{event_id}/archive", status_code=204)
 def archive_event(request: Request, event_id: str):
     """Take the event off the listings and the gallery. Nothing is deleted; its links keep working."""
@@ -628,6 +645,8 @@ class PublishIn(BaseModel):
                                                             "winner, an empty string leaves a prize unawarded")
     reasons: dict[str, str] | None = Field(None, description="prize id -> the organizers' reason for the award; required "
                                                              "for a close call, signed into the record")
+    groups_reason: str = Field("", description="required when the judges fall into groups that share no projects: "
+                                               "why one ranking across them is fair; signed into the record")
 
 
 @v1.post("/events/{event_id}/publish", response_model=PublishOut)
@@ -635,7 +654,7 @@ def publish(request: Request, event_id: str, data: PublishIn | None = None):
     """Sign and freeze the results, award prizes, issue judge records and team certificates. Final."""
     return records.publish_results(conn_for(request), actor(request), event_id, request.app.state.signer,
                                    signing_base_url(request), (data.awards if data else None),
-                                   (data.reasons if data else None))
+                                   (data.reasons if data else None), (data.groups_reason if data else ""))
 
 
 @v1.get("/events/{event_id}/awards/suggested")

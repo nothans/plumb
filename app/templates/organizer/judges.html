@@ -31,20 +31,29 @@
     <p class="small muted">A judge with reviews on the record stays; to lighten their load, unassign their open projects on the Assignments page.</p>
     {% if unclaimed %}
     <h2 id="claim">No account yet ({{ unclaimed | length }})</h2>
-    <p class="small muted">These people came in with an import and have never set a password. A claim link lets one of them set it: it works once, for {{ claim_days }} days, and only you can make it for someone whose every event you organize.</p>
+    <p class="small muted">These people came in with an import and have never set a password. A claim link lets one of them set it: it works once, for {{ claim_days }} days, and only someone who organizes every event the person belongs to can make it. Making a new link for someone ends their earlier one.</p>
     {% if claim_link %}
       <div class="notice" role="status">Send this link to {{ claim_email }}, and only to them: whoever opens it sets the password. Plumb does not send email.</div>
       <input type="text" readonly value="{{ claim_link }}" aria-label="Claim link">
     {% endif %}
+    {% macro claim_table(people) %}
     <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
-      <tbody>{% for u in unclaimed %}<tr>
+      <thead><tr><th>Name</th><th></th></tr></thead>
+      <tbody>{% for u in people %}<tr>
         <td><strong>{{ u.name }}</strong><br><span class="small muted">{{ u.email }}</span></td>
-        <td>{{ u.role }}</td>
-        <td><form method="post" action="/events/{{ event.id }}/manage/claim-link">{{ csrf_field() }}
-          <input type="hidden" name="user_id" value="{{ u.id }}"><button type="submit">Make claim link</button></form></td>
+        <td class="num"><form method="post" action="/events/{{ event.id }}/manage/claim-link">{{ csrf_field() }}
+          <input type="hidden" name="user_id" value="{{ u.id }}"><button type="submit" aria-label="Make a claim link for {{ u.name }}">Make claim link</button></form></td>
       </tr>{% endfor %}</tbody>
     </table></div>
+    {% endmacro %}
+    {% set judges_unclaimed = unclaimed | selectattr('role', 'equalto', 'judge') | list %}
+    {% set members_unclaimed = unclaimed | rejectattr('role', 'equalto', 'judge') | list %}
+    {% if judges_unclaimed %}<h3>Judges ({{ judges_unclaimed | length }})</h3>{{ claim_table(judges_unclaimed) }}{% endif %}
+    {% if members_unclaimed %}
+    <details class="mt-m"{% if not judges_unclaimed %} open{% endif %}><summary>Team members ({{ members_unclaimed | length }})</summary>
+      {{ claim_table(members_unclaimed) }}
+    </details>
+    {% endif %}
     {% endif %}
   </div>
   <aside>

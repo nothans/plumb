@@ -15,6 +15,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests tools
       - run: python -m pytest -q
+      - name: README numbers come from the reports and the suite
+        run: python tools/readme_tiers.py --check
 
   acceptance:
     runs-on: ubuntu-latest
@@ -37,3 +39,31 @@ jobs:
         run: python3 tools/acceptance_extended.py .dogfood.toml | tee acceptance-report-extended.ci.txt
       - if: always()
         run: docker compose logs
+
+  # The portal promises to need no network at runtime. Prove it: run it with
+  # no network at all and put both checkers through it, inside the container.
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t plumb:offline .
+      - name: start the portal with the network cut off
+        run: |
+          docker run -d --name plumb-offline --network none \
+            -e PLUMB_DEMO=1 -e PLUMB_BASE_URL=http://localhost:8080 -e PLUMB_WEBHOOKS_ALLOW_HOSTS=127.0.0.1 \
+            -v "$PWD/.dogfood.toml:/srv/plumb/.dogfood.toml:ro" plumb:offline
+          for i in $(seq 1 60); do
+            docker exec plumb-offline python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/projects', timeout=2)" && break
+            sleep 1
+          done
+      - name: the container really has no network
+        run: |
+          ! docker exec plumb-offline python -c "import socket; socket.create_connection(('1.1.1.1', 53), timeout=3)"
+      - name: both checkers, from inside
+        run: |
+          docker exec plumb-offline python tools/acceptance_run.py .dogfood.toml | tee offline-report.txt
+          grep -q "verified T1 T2" offline-report.txt
+          docker exec plumb-offline python tools/acceptance_extended.py .dogfood.toml --webhook-host 127.0.0.1 | tee offline-extended.txt
+          grep -q "verified T3 T4" offline-extended.txt
+      - if: always()
+        run: docker logs plumb-offline

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import timedelta
 
@@ -139,15 +140,18 @@ def issue_claim_link(conn: sqlite3.Connection, actor: Actor | None, event_id: st
             raise Forbidden("that account also belongs to an event you do not organize; ask an organizer of all of "
                             "its events, or an admin, to make the link")
         token = new_token(24)
+        # A new link ends the ones before it: the way to stop a link that went to the wrong place.
+        replaced = conn.execute("DELETE FROM claim_links WHERE user_id = ? AND used_at IS NULL", (user_id,)).rowcount
         conn.execute("INSERT INTO claim_links(token_hash, user_id, created_by, created_at) VALUES (?,?,?,?)",
                      (token_hash(token), user_id, actor.id, now()))
-        audit.append(conn, "account.claim_link", actor_id=actor.id, event_id=event_id, subject=user_id, ip=actor.ip)
+        audit.append(conn, "account.claim_link", actor_id=actor.id, event_id=event_id, subject=user_id,
+                     detail={"replaced": replaced}, ip=actor.ip)
     return token
 
 
 def get_claim_link(conn: sqlite3.Connection, token: str) -> sqlite3.Row:
     row = conn.execute(
-        "SELECT c.*, u.email, u.password_hash FROM claim_links c JOIN users u ON u.id = c.user_id WHERE c.token_hash = ?",
+        "SELECT c.*, u.email, u.name, u.password_hash FROM claim_links c JOIN users u ON u.id = c.user_id WHERE c.token_hash = ?",
         (token_hash(token),)).fetchone()
     if row is None:
         raise NotFound("that claim link is not valid")
@@ -366,9 +370,11 @@ def release_open_assignments(conn: sqlite3.Connection, actor: Actor | None, even
 def judge_queue(conn: sqlite3.Connection, actor: Actor | None, event_id: str) -> list[sqlite3.Row]:
     actor = require_judge(conn, event_id, actor)
     return conn.execute(
-        f"SELECT {PROJECT_COLUMNS}, v.id AS review_id, v.updated_at AS reviewed_at, a.source "
+        f"SELECT {PROJECT_COLUMNS}, v.id AS review_id, v.updated_at AS reviewed_at, a.source, "
+        "d.updated_at AS draft_at "
         f"{PROJECT_FROM} JOIN assignments a ON a.project_id = p.id "
         "LEFT JOIN reviews v ON v.project_id = p.id AND v.judge_id = a.judge_id "
+        "LEFT JOIN review_drafts d ON d.project_id = p.id AND d.judge_id = a.judge_id "
         f"WHERE a.event_id = ? AND a.judge_id = ? AND {live_entry('p')} ORDER BY (v.id IS NOT NULL), p.title",
         (event_id, actor.id),
     ).fetchall()
@@ -385,25 +391,66 @@ def own_review(conn: sqlite3.Connection, actor: Actor, project_id: str) -> dict 
     return {**dict(row), "values": values}
 
 
+def _reviewable(conn: sqlite3.Connection, actor: Actor, project_id: str):
+    """(project, event, criteria) when actor may review project now."""
+    project = get_project(conn, project_id)
+    event_id = project["event_id"]
+    if "judge" not in roles(conn, event_id, actor):
+        raise Forbidden("only this event's judges can review")
+    if not conn.execute(
+        "SELECT 1 FROM assignments WHERE judge_id = ? AND project_id = ?", (actor.id, project_id)
+    ).fetchone():
+        raise Forbidden("this project is not assigned to you")
+    if project["status"] != "submitted" or project["duplicate_of"] or project["disqualified_reason"]:
+        raise Conflict("this entry is not in judging (a draft, a duplicate or disqualified)")
+    event = get_event(conn, event_id)
+    if not phase(event)["judging_open"]:
+        if event["results_published_at"]:
+            raise Conflict("results are published; reviews are locked")
+        raise Conflict("judging is not open for this event")
+    return project, event, criteria(conn, event_id)
+
+
+def review_draft(conn: sqlite3.Connection, actor: Actor, project_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM review_drafts WHERE judge_id = ? AND project_id = ?",
+                       (actor.id, project_id)).fetchone()
+    return None if row is None else {**dict(row), "values": json.loads(row["values_json"])}
+
+
+def save_review_draft(conn: sqlite3.Connection, actor: Actor | None, project_id: str, values: dict, comment: str) -> None:
+    """Keep an unfinished review on the server. Any criterion may still be
+    blank; what is filled must be in range. Never over a submitted review:
+    that one is on the record, and editing it is a new submission."""
+    actor = require_user(actor)
+    with transaction(conn):
+        project, event, crit = _reviewable(conn, actor, project_id)
+        if conn.execute("SELECT 1 FROM reviews WHERE judge_id = ? AND project_id = ?", (actor.id, project_id)).fetchone():
+            raise Conflict("this review is already submitted; change it and submit again instead of saving a draft")
+        kept: dict[str, int] = {}
+        for c in crit:
+            raw = values.get(c["key"])
+            if raw in (None, ""):
+                continue
+            try:
+                v = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise Invalid(f"{c['name']} must be a whole number") from exc
+            if not c["min_value"] <= v <= c["max_value"]:
+                raise Invalid(f"{c['name']} must be between {c['min_value']} and {c['max_value']}")
+            kept[c["key"]] = v
+        comment = clean_text(comment, "comment", max_len=4000)
+        conn.execute(
+            "INSERT INTO review_drafts(judge_id, project_id, event_id, values_json, comment, updated_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(judge_id, project_id) DO UPDATE SET values_json = excluded.values_json, "
+            "comment = excluded.comment, updated_at = excluded.updated_at",
+            (actor.id, project_id, event["id"], json.dumps(kept, sort_keys=True), comment, now()))
+
+
 def save_review(conn: sqlite3.Connection, actor: Actor | None, project_id: str, values: dict, comment: str) -> str:
     actor = require_user(actor)
     with transaction(conn):
-        project = get_project(conn, project_id)
-        event_id = project["event_id"]
-        if "judge" not in roles(conn, event_id, actor):
-            raise Forbidden("only this event's judges can review")
-        if not conn.execute(
-            "SELECT 1 FROM assignments WHERE judge_id = ? AND project_id = ?", (actor.id, project_id)
-        ).fetchone():
-            raise Forbidden("this project is not assigned to you")
-        if project["status"] != "submitted" or project["duplicate_of"] or project["disqualified_reason"]:
-            raise Conflict("this entry is not in judging (a draft, a duplicate or disqualified)")
-        event = get_event(conn, event_id)
-        if not phase(event)["judging_open"]:
-            if event["results_published_at"]:
-                raise Conflict("results are published; reviews are locked")
-            raise Conflict("judging is not open for this event")
-        crit = criteria(conn, event_id)
+        project, event, crit = _reviewable(conn, actor, project_id)
+        event_id = event["id"]
         clean: dict[str, int] = {}
         for c in crit:
             raw = values.get(c["key"])
@@ -436,6 +483,7 @@ def save_review(conn: sqlite3.Connection, actor: Actor | None, project_id: str, 
             conn.execute(
                 "INSERT INTO review_scores(review_id, criterion_id, value) VALUES (?,?,?)", (rid, c["id"], clean[c["key"]])
             )
+        conn.execute("DELETE FROM review_drafts WHERE judge_id = ? AND project_id = ?", (actor.id, project_id))
         audit.append(conn, action, actor_id=actor.id, event_id=event_id, subject=project_id, detail=detail, ip=actor.ip)
     return rid
 

@@ -18,11 +18,11 @@ from .core import (
 from .events import (
     get_event,
     is_organizer,
-    phase,
     require_organizer,
     require_user,
 )
 from .teams import (
+    submissions_state,
     team_for,
 )
 
@@ -86,6 +86,12 @@ def view_project(conn: sqlite3.Connection, actor: Actor | None, project_id: str)
     return project
 
 
+def _judged(conn: sqlite3.Connection, project_id: str) -> bool:
+    """Whether any judge has reviewed or compared this entry."""
+    return conn.execute("SELECT 1 FROM reviews WHERE project_id = ? UNION ALL SELECT 1 FROM comparisons "
+                        "WHERE project_a = ? OR project_b = ? LIMIT 1", (project_id, project_id, project_id)).fetchone() is not None
+
+
 def save_project(conn: sqlite3.Connection, actor: Actor | None, event_id: str, form: dict,
                  *, submit: bool, project_id: str | None = None) -> str:
     """Create or edit the actor's team project.
@@ -97,12 +103,12 @@ def save_project(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
     actor = require_user(actor)
     with transaction(conn):
         event = get_event(conn, event_id)
-        state = phase(event)["submissions"]
+        team = team_for(conn, event_id, actor.id)
+        state, closes = submissions_state(conn, event, team["id"] if team else None)
         if state == "closed":
-            raise Conflict(f"submissions for {event['name']} closed at {_utc(event['submissions_close'])}; entries are final")
+            raise Conflict(f"submissions for {event['name']} closed at {_utc(closes)}; entries are final")
         if state == "upcoming":
             raise Conflict(f"submissions for {event['name']} open at {_utc(event['submissions_open'])}")
-        team = team_for(conn, event_id, actor.id)
         if team is None:
             raise Forbidden("join or create a team for this event before submitting")
         title = clean_text(form.get("title"), "title", required=True, max_len=120)
@@ -125,6 +131,9 @@ def save_project(conn: sqlite3.Connection, actor: Actor | None, event_id: str, f
         ).fetchone()
         if project_id and (existing is None or existing["id"] != project_id):
             raise Forbidden("that is not your team's project")
+        if existing and _judged(conn, existing["id"]):
+            # Only possible on an extension: judges scored what they saw.
+            raise Conflict("a judge has already reviewed this entry, so it can no longer change")
         ts = now()
         if existing:
             pid = existing["id"]
@@ -155,8 +164,10 @@ def unsubmit_project(conn: sqlite3.Connection, actor: Actor | None, project_id: 
     with transaction(conn):
         project = get_project(conn, project_id)
         event = get_event(conn, project["event_id"])
-        if phase(event)["submissions"] != "open":
+        if submissions_state(conn, event, project["team_id"])[0] != "open":
             raise Conflict("submissions are closed")
+        if _judged(conn, project_id):
+            raise Conflict("a judge has already reviewed this entry, so it can no longer change")
         if not conn.execute("SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?", (project["team_id"], actor.id)).fetchone():
             raise Forbidden("that is not your team's project")
         conn.execute("UPDATE projects SET status='draft', submitted_at=NULL, updated_at=? WHERE id=?", (now(), project_id))

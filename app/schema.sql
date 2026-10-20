@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS events (
     rubric_locked_at     TEXT,
     results_published_at TEXT,
     archived_at          TEXT,                -- hidden from listings and the gallery; still reachable by link
+    method_json          TEXT,                -- the judging method registered when the rubric was locked (app/method.py)
+    method_hash          TEXT,                -- its sha256, published on the event page
     created_at           TEXT NOT NULL,
     CHECK (submissions_open < submissions_close),
     CHECK (voting_open IS NULL OR voting_close IS NULL OR voting_open < voting_close)
@@ -332,3 +334,156 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     updated_at  TEXT NOT NULL,
     UNIQUE (webhook_id, audit_seq)
 );
+
+-- A deadline extension for one team, with the organizers' reason. The
+-- submission rule below reads it, so a late entry is refused by the
+-- database itself, not only by the form.
+CREATE TABLE IF NOT EXISTS team_extensions (
+    team_id    TEXT PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE,
+    event_id   TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    until      TEXT NOT NULL,
+    reason     TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 300),
+    granted_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    granted_at TEXT NOT NULL
+);
+
+-- The rules, kept by the database as well as by the code. Each refusal
+-- starts with "plumb:" so the app can answer it as a 409 with the message;
+-- nothing else from SQLite is shown to anyone. db.check_rules compares
+-- every rule_ trigger here with what the database holds, at every boot.
+
+-- A score stays inside its criterion's range.
+CREATE TRIGGER IF NOT EXISTS rule_score_in_range BEFORE INSERT ON review_scores
+WHEN NEW.value < (SELECT min_value FROM criteria WHERE id = NEW.criterion_id)
+  OR NEW.value > (SELECT max_value FROM criteria WHERE id = NEW.criterion_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: a score is outside its criterion''s range'); END;
+CREATE TRIGGER IF NOT EXISTS rule_score_in_range_update BEFORE UPDATE ON review_scores
+WHEN NEW.value < (SELECT min_value FROM criteria WHERE id = NEW.criterion_id)
+  OR NEW.value > (SELECT max_value FROM criteria WHERE id = NEW.criterion_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: a score is outside its criterion''s range'); END;
+
+-- After publication, reviews and their scores are frozen.
+CREATE TRIGGER IF NOT EXISTS rule_reviews_frozen_insert BEFORE INSERT ON reviews
+WHEN (SELECT results_published_at FROM events WHERE id = NEW.event_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+CREATE TRIGGER IF NOT EXISTS rule_reviews_frozen_update BEFORE UPDATE ON reviews
+WHEN (SELECT results_published_at FROM events WHERE id = OLD.event_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+CREATE TRIGGER IF NOT EXISTS rule_reviews_frozen_delete BEFORE DELETE ON reviews
+WHEN (SELECT results_published_at FROM events WHERE id = OLD.event_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+CREATE TRIGGER IF NOT EXISTS rule_scores_frozen_insert BEFORE INSERT ON review_scores
+WHEN (SELECT e.results_published_at FROM reviews r JOIN events e ON e.id = r.event_id WHERE r.id = NEW.review_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+CREATE TRIGGER IF NOT EXISTS rule_scores_frozen_update BEFORE UPDATE ON review_scores
+WHEN (SELECT e.results_published_at FROM reviews r JOIN events e ON e.id = r.event_id WHERE r.id = OLD.review_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+CREATE TRIGGER IF NOT EXISTS rule_scores_frozen_delete BEFORE DELETE ON review_scores
+WHEN (SELECT e.results_published_at FROM reviews r JOIN events e ON e.id = r.event_id WHERE r.id = OLD.review_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; reviews are frozen'); END;
+
+-- The rubric: no new or removed criterion once anything is scored, and no
+-- change at all once it is locked or the results are published.
+CREATE TRIGGER IF NOT EXISTS rule_rubric_no_new_criterion BEFORE INSERT ON criteria
+WHEN EXISTS (SELECT 1 FROM reviews WHERE event_id = NEW.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: reviews exist; criteria can be reweighted but not added'); END;
+CREATE TRIGGER IF NOT EXISTS rule_rubric_no_removed_criterion BEFORE DELETE ON criteria
+WHEN EXISTS (SELECT 1 FROM reviews WHERE event_id = OLD.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: reviews exist; criteria cannot be removed'); END;
+CREATE TRIGGER IF NOT EXISTS rule_rubric_frozen BEFORE UPDATE ON criteria
+WHEN (SELECT rubric_locked_at IS NOT NULL OR results_published_at IS NOT NULL FROM events WHERE id = OLD.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: the rubric is locked'); END;
+
+-- Publication and the rubric lock happen once and stay.
+CREATE TRIGGER IF NOT EXISTS rule_published_once BEFORE UPDATE OF results_published_at ON events
+WHEN OLD.results_published_at IS NOT NULL AND NEW.results_published_at IS NOT OLD.results_published_at
+BEGIN SELECT RAISE(ABORT, 'plumb: results were published; that cannot be undone'); END;
+CREATE TRIGGER IF NOT EXISTS rule_method_registered_once BEFORE UPDATE OF method_json, method_hash ON events
+WHEN OLD.method_hash IS NOT NULL AND (NEW.method_hash IS NOT OLD.method_hash OR NEW.method_json IS NOT OLD.method_json)
+BEGIN SELECT RAISE(ABORT, 'plumb: the judging method was registered; it cannot change'); END;
+CREATE TRIGGER IF NOT EXISTS rule_rubric_locked_once BEFORE UPDATE OF rubric_locked_at ON events
+WHEN OLD.rubric_locked_at IS NOT NULL AND NEW.rubric_locked_at IS NOT OLD.rubric_locked_at
+BEGIN SELECT RAISE(ABORT, 'plumb: the rubric was locked; that cannot be undone'); END;
+
+-- Signed records and awards are written once.
+CREATE TRIGGER IF NOT EXISTS rule_records_no_update BEFORE UPDATE ON records
+BEGIN SELECT RAISE(ABORT, 'plumb: signed records cannot change'); END;
+CREATE TRIGGER IF NOT EXISTS rule_records_no_delete BEFORE DELETE ON records
+BEGIN SELECT RAISE(ABORT, 'plumb: signed records cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS rule_awards_once BEFORE INSERT ON awards
+WHEN (SELECT results_published_at FROM events WHERE id = NEW.event_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; awards are final'); END;
+CREATE TRIGGER IF NOT EXISTS rule_awards_no_update BEFORE UPDATE ON awards
+BEGIN SELECT RAISE(ABORT, 'plumb: awards are final'); END;
+CREATE TRIGGER IF NOT EXISTS rule_awards_no_delete BEFORE DELETE ON awards
+BEGIN SELECT RAISE(ABORT, 'plumb: awards are final'); END;
+
+-- A vote is cast inside the voting window, and none is added or removed
+-- after publication.
+CREATE TRIGGER IF NOT EXISTS rule_vote_in_window BEFORE INSERT ON votes
+WHEN (SELECT voting_open IS NULL OR voting_close IS NULL OR NEW.created_at < voting_open
+             OR NEW.created_at >= voting_close OR results_published_at IS NOT NULL
+      FROM events WHERE id = NEW.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: voting is not open'); END;
+CREATE TRIGGER IF NOT EXISTS rule_votes_frozen BEFORE DELETE ON votes
+WHEN (SELECT results_published_at FROM events WHERE id = OLD.event_id) IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'plumb: results are published; votes are final'); END;
+
+-- An entry is submitted by the deadline, or by its team's extension.
+CREATE TRIGGER IF NOT EXISTS rule_submitted_in_time BEFORE INSERT ON projects
+WHEN NEW.status = 'submitted' AND NEW.submitted_at > (
+    SELECT coalesce((SELECT until FROM team_extensions WHERE team_id = NEW.team_id), submissions_close)
+    FROM events WHERE id = NEW.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: submissions are closed'); END;
+CREATE TRIGGER IF NOT EXISTS rule_submitted_in_time_update BEFORE UPDATE OF status, submitted_at ON projects
+WHEN NEW.status = 'submitted' AND NEW.submitted_at IS NOT OLD.submitted_at AND NEW.submitted_at > (
+    SELECT coalesce((SELECT until FROM team_extensions WHERE team_id = NEW.team_id), submissions_close)
+    FROM events WHERE id = NEW.event_id)
+BEGIN SELECT RAISE(ABORT, 'plumb: submissions are closed'); END;
+
+-- Each audit entry links to the one before it, in the whole log and in its
+-- event (the hash itself is recomputed by audit.verify_chain).
+CREATE TRIGGER IF NOT EXISTS rule_audit_linked BEFORE INSERT ON audit_log
+WHEN NEW.seq IS NOT coalesce((SELECT max(seq) FROM audit_log), 0) + 1
+  OR NEW.prev_hash IS NOT coalesce((SELECT hash FROM audit_log ORDER BY seq DESC LIMIT 1), printf('%064d', 0))
+  OR (NEW.v >= 2 AND NEW.event_id IS NOT NULL AND NEW.event_prev IS NOT coalesce(
+        (SELECT hash FROM audit_log WHERE event_id = NEW.event_id ORDER BY seq DESC LIMIT 1), printf('%064d', 0)))
+BEGIN SELECT RAISE(ABORT, 'plumb: an audit entry must link to the one before it'); END;
+
+-- A judge's unfinished review, kept on the server so it survives a closed
+-- tab or another device. Drafts never reach the results: those read only
+-- reviews. A draft cannot be saved over a submitted review.
+CREATE TABLE IF NOT EXISTS review_drafts (
+    judge_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    event_id    TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    values_json TEXT NOT NULL DEFAULT '{}',
+    comment     TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (judge_id, project_id)
+);
+
+-- Numbered, signed receipts: one for each submitted review and each
+-- submitted entry, for the exact content submitted (a later edit gets a new
+-- receipt with a new number). payload is the canonical JSON that was signed.
+CREATE TABLE IF NOT EXISTS receipts (
+    number         INTEGER PRIMARY KEY,
+    event_id       TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    kind           TEXT NOT NULL CHECK (kind IN ('review', 'entry')),
+    subject        TEXT NOT NULL,             -- the review id, or the project id
+    owner_id       TEXT,                      -- the judge, for a review
+    team_id        TEXT,                      -- the team, for an entry
+    content_sha256 TEXT NOT NULL,
+    payload        TEXT NOT NULL,
+    signature      TEXT NOT NULL,
+    key_id         TEXT NOT NULL,
+    issued_at      TEXT NOT NULL,
+    UNIQUE (kind, subject, content_sha256)
+);
+CREATE TRIGGER IF NOT EXISTS rule_receipts_no_update BEFORE UPDATE ON receipts
+BEGIN SELECT RAISE(ABORT, 'plumb: receipts cannot change'); END;
+CREATE TRIGGER IF NOT EXISTS rule_receipts_no_delete BEFORE DELETE ON receipts
+BEGIN SELECT RAISE(ABORT, 'plumb: receipts cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS rule_receipts_numbered BEFORE INSERT ON receipts
+WHEN NEW.number IS NOT coalesce((SELECT max(number) FROM receipts), 0) + 1
+BEGIN SELECT RAISE(ABORT, 'plumb: receipts are numbered in order'); END;

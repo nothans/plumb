@@ -23,7 +23,10 @@
     </div>
   </div>
   {% include "_method.html" %}
-  {% if res.excluded %}<p class="small muted">{{ res.excluded | length }} reviews were left out: they belong to duplicates, disqualified projects or drafts, or miss a weighted criterion.</p>{% endif %}
+  {% set not_ranked = res.excluded | selectattr('why', 'equalto', 'project not eligible') | list %}
+  {% set missing = res.excluded | rejectattr('why', 'equalto', 'project not eligible') | list %}
+  {% if not_ranked %}<p class="small muted">{{ not_ranked | length }} reviews belong to duplicates, disqualified projects or drafts: those projects are not ranked, but the reviews still show how their judges lean, so they are in the fit.</p>{% endif %}
+  {% if missing %}<p class="small muted">{{ missing | length }} reviews miss a weighted criterion and are left out.</p>{% endif %}
   {% if res.unreviewed %}<div class="alert warn">{{ res.unreviewed | length }} eligible projects have no reviews and cannot be ranked: {% for p in res.unreviewed %}{{ p.title }}{% if not loop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
 </div>
 {% if leaders | length > 1 %}
@@ -83,6 +86,10 @@
       </table></div>
       <p class="small muted">A <strong>close call</strong> is a prize the winner takes with under 60% certainty over the best other candidate (a <em>tie</em>). Publishing asks for a reason for each close call, such as a judging-room discussion or a shared prize, and signs it into the record. Choosing a different winner changes the check; publishing runs it again.</p>
     </fieldset>
+    {% endif %}
+    {% if fit.components > 1 %}
+    <label>Why rank across the {{ fit.components }} judge groups? <span class="hint">Required. These groups share no projects, so judge lean cannot be compared across them. Bridging assignments fix that; otherwise say why one ranking is fair. It is signed into the record.</span>
+      <textarea name="groups_reason" rows="2" maxlength="500" required></textarea></label>
     {% endif %}
     {% set blocked = phase.voting in ('open', 'upcoming') or not fit.identifiable %}
     <div class="checks"><label><input type="checkbox" name="confirm" value="1" required {% if blocked %}disabled{% endif %}>I understand this is final and locks the event's results.</label></div>

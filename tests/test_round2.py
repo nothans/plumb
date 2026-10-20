@@ -48,9 +48,14 @@ def test_open_vote_cannot_be_shortened_or_switched_off(organizer):
 
 
 def test_closed_vote_cannot_be_reopened_in_two_steps(organizer, db):
-    set_event(db, REPLAY, results_published_at=None)  # isolate the voting rule from the publication freeze
-    assert organizer.patch(f"/api/v1/events/{REPLAY}", json={"voting_mode": "off"}).status_code == 409
-    assert organizer.patch(f"/api/v1/events/{REPLAY}", json={"voting_close": ts(24)}).status_code == 409
+    # An unpublished event whose vote has closed: the voting rule alone, without the publication freeze.
+    set_event(db, FIX, voting_mode="accounts", voting_open=ts(-48), voting_close=ts(-1))
+    db.execute("INSERT INTO votes(event_id, voter_id, project_id, created_at, nonce) SELECT ?, id, 'prj_01', ?, 'n' "
+               "FROM users WHERE email = 'priya1@example.org'", (FIX, ts(-24)))
+    db.commit()
+    assert organizer.get(f"/api/v1/events/{FIX}").json()["results_published_at"] is None
+    assert organizer.patch(f"/api/v1/events/{FIX}", json={"voting_mode": "off"}).status_code == 409
+    assert organizer.patch(f"/api/v1/events/{FIX}", json={"voting_close": ts(24)}).status_code == 409
 
 
 def test_publishing_waits_for_the_vote_even_when_it_has_not_started(organizer, db):
@@ -215,3 +220,69 @@ def test_a_trickling_receiver_costs_one_deadline_not_the_whole_queue(organizer, 
     row = __import__("sqlite3").connect(settings.database_path).execute(
         "SELECT status, last_error FROM webhook_deliveries ORDER BY id DESC LIMIT 1").fetchone()
     assert row[0] == "failed" and "within" in row[1]
+
+
+def test_a_slow_receiver_does_not_hold_up_the_other_hooks(organizer, settings, monkeypatch):
+    """A receiver that always answers, but slowly (under the deadline), only
+    delays itself; before, one pass walked the hooks in turn and made every
+    other hook wait for its whole batch."""
+    import threading
+
+    from app.routes import api as api_routes
+    monkeypatch.setattr(api_routes, "check_destination", lambda url: None)
+    organizer.post(f"/api/v1/events/{FIX}/webhooks", json={"url": "https://slow.example/hook"})
+    organizer.post(f"/api/v1/events/{FIX}/webhooks", json={"url": "https://fast.example/hook"})
+    for w in range(2, 10):
+        organizer.put(f"/api/v1/events/{FIX}/rubric", json={"weights": {"quality": w}})
+    started = time.monotonic()
+    fast_done: list[float] = []
+
+    def send(url, body, headers):
+        if "slow" in url:
+            time.sleep(0.25)
+        else:
+            fast_done.append(time.monotonic() - started)
+        return 200
+
+    d = webhooks.Deliverer(settings.database_path, send=send, deadline=2.0)
+    passes = threading.Thread(target=d.run_once)
+    passes.start()
+    passes.join(10)
+    assert len(fast_done) >= 9                   # webhook.created (2) + 8 rubric updates, at least
+    assert max(fast_done) < 1.0, fast_done       # done while the slow receiver is still working through ~2.5 s
+
+
+def test_an_event_has_at_most_ten_webhooks(organizer, monkeypatch):
+    from app.routes import api as api_routes
+    monkeypatch.setattr(api_routes, "check_destination", lambda url: None)
+    codes = [organizer.post(f"/api/v1/events/{FIX}/webhooks", json={"url": f"https://h{i}.example/x"}).status_code
+             for i in range(11)]
+    assert codes == [201] * 10 + [409]
+
+
+def test_ranking_across_judge_groups_that_never_meet_needs_a_signed_reason(app):
+    """Two judge groups that share no project: lean cannot be compared across
+    them, so one ranking of everyone is the organizers' call, on the record."""
+    from .conftest import client_for, csrf_of
+    admin = client_for(app)
+    admin.post("/login", data={"csrf": csrf_of(admin, "/login"), "email": "admin@example.org",
+                               "password": "plumb-demo-2026", "next": "/"})
+    doc = {"event": {"id": "evt_split", "name": "Split Judging", "submissions_close": "2026-01-10T18:00:00Z"},
+           "judges": [{"id": f"j{i}", "name": f"Judge {i}", "email": f"split-j{i}@example.net"} for i in range(6)],
+           "teams": [{"id": f"t{i}", "name": f"Team {i}", "members": [f"split-m{i}@example.net"]} for i in range(12)],
+           "projects": [{"id": f"p{i}", "team": f"t{i}", "title": f"Project {i}", "submitted_at": "2026-01-09T12:00:00Z"}
+                        for i in range(12)],
+           "scores": [{"judge": f"j{j + (3 if p >= 6 else 0)}", "project": f"p{p}",
+                       "criteria": {"functionality": 1 + (p + j) % 5, "quality": 1 + p % 5, "innovation": 3}}
+                      for p in range(12) for j in range(3)]}
+    assert admin.post("/api/v1/events/import", json=doc).status_code == 201
+    eid = "evt_split"
+    results = admin.get(f"/api/v1/events/{eid}/results").json()
+    assert results["method"]["graph_components"] == 2
+    r = admin.post(f"/api/v1/events/{eid}/publish")
+    assert r.status_code == 422 and "2 groups that share no projects" in r.json()["error"]
+    r = admin.post(f"/api/v1/events/{eid}/publish", json={"groups_reason": "each group judged half the room; we checked "
+                                                                          "both groups' top three in person"})
+    assert r.status_code == 200, r.text
+    page = client_for(app).get(f"/events/{eid}/results").text
+    assert "The organizers ranked across them anyway, and said why: each group judged half the room" in page

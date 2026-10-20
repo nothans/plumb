@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import domain
-from ..web import actor, conn_for, form_body, redirect, render, wants_json
+from .. import domain, records
+from ..web import actor, conn_for, form_body, redirect, render, signing_base_url, wants_json
 
 router = APIRouter(include_in_schema=False)  # HTML pages; the JSON API is in api.py
 
@@ -25,7 +27,7 @@ def team_page(request: Request, event_id: str):
             "SELECT * FROM projects WHERE team_id = ? AND duplicate_of IS NULL", (team["id"],)
         ).fetchone()
     return render(request, "team.html", event=event, phase=domain.phase(event), team=team, members=members,
-                  project=project,
+                  project=project, entry=_entry(conn, event, team["id"] if team else None),
                   is_judge="judge" in domain.roles(conn, event_id, me))
 
 
@@ -71,10 +73,19 @@ def reset_invite(request: Request, team_id: str, _: dict = Depends(form_body)):
 # --- the project form ---------------------------------------------------------------
 
 
+def _entry(conn, event, team_id: str | None) -> dict:
+    """The team's own submission window: the event's, or its extension."""
+    state, closes = domain.submissions_state(conn, event, team_id)
+    return {"state": state, "closes": closes, "extension": domain.extension_for(conn, team_id)}
+
+
 def _form_page(request: Request, event_id: str, project=None, form=None, error=None, status_code=200):
     conn = conn_for(request)
     event = domain.get_event(conn, event_id)
+    me = actor(request)
+    team = domain.team_for(conn, event_id, me.id) if me else None
     return render(request, "project_form.html", status_code=status_code, event=event, phase=domain.phase(event),
+                  entry=_entry(conn, event, team["id"] if team else None),
                   tracks=domain.tracks(conn, event_id), project=project, form=form or (dict(project) if project else {}),
                   error=error)
 
@@ -104,8 +115,9 @@ def create_project(request: Request, event_id: str, data: dict = Depends(form_bo
         return _form_page(request, event_id, form=data, error=exc.message, status_code=exc.status)
     if wants_json(request):
         return JSONResponse({"id": pid, "status": "submitted" if submit else "draft"}, status_code=201)
-    return redirect(f"/projects/{pid}", "Submitted. You can keep editing until the deadline." if submit
-                    else "Draft saved. Only your team can see it until you submit.")
+    if submit:
+        return redirect(f"/projects/{pid}/receipt", "Submitted. You can keep editing until the deadline.")
+    return redirect(f"/projects/{pid}", "Draft saved. Only your team can see it until you submit.")
 
 
 @router.get("/projects/{project_id}/edit", response_class=HTMLResponse)
@@ -130,8 +142,20 @@ def save_edit(request: Request, project_id: str, data: dict = Depends(form_body)
             raise
         return _form_page(request, project["event_id"], project=project, form=data, error=exc.message,
                           status_code=exc.status)
-    return redirect(f"/projects/{project_id}", "Saved." if project["status"] == "submitted" or not submit
-                    else "Submitted. You can keep editing until the deadline.")
+    if submit:
+        # Every saved change of a submitted entry gets its own receipt.
+        return redirect(f"/projects/{project_id}/receipt", "Saved." if project["status"] == "submitted"
+                        else "Submitted. You can keep editing until the deadline.")
+    return redirect(f"/projects/{project_id}", "Saved.")
+
+
+@router.get("/projects/{project_id}/receipt", response_class=HTMLResponse)
+def entry_receipt(request: Request, project_id: str):
+    conn = conn_for(request)
+    row = records.entry_receipt(conn, actor(request), project_id, request.app.state.signer, signing_base_url(request))
+    project = domain.get_project(conn, project_id)
+    return render(request, "receipt.html", receipt=row, body=json.loads(row["payload"]), project=project,
+                  back=f"/projects/{project_id}", back_label=f"Back to {project['title']}")
 
 
 @router.post("/projects/{project_id}/unsubmit")

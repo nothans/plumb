@@ -230,3 +230,39 @@ def test_the_dashboard_refreshes_only_when_asked(organizer):
     assert 'http-equiv="refresh"' not in page and "Refresh every minute" in page
     page = organizer.get("/events/evt_01/manage?refresh=1").text
     assert 'http-equiv="refresh"' in page and "Stop refreshing" in page
+
+
+@pytest.mark.parametrize("value, ok", [
+    ("127.0.0.1", True), ("172.16.0.0/12,127.0.0.1", True), ("::1", True), ("", True),
+    ("*", False), ("172.16.0.5/12", False), ("10.0.0.0/33", False), ("proxy", False),
+])
+def test_forwarded_allow_ips_is_checked_like_uvicorn_reads_it(value, ok):
+    from uvicorn.middleware.proxy_headers import _TrustedHosts
+
+    from app.config import forwarded_problem
+    assert (forwarded_problem(value, demo=False) is None) == ok
+    if not ok and value != "*":
+        # What the check refuses is exactly what uvicorn would silently never match.
+        assert value in _TrustedHosts(value).trusted_literals
+
+
+def test_a_wildcard_proxy_setting_stops_a_real_boot(blank, monkeypatch):
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    with pytest.raises(SystemExit, match="walk around the rate limits"):
+        _boot(blank)
+
+
+@pytest.mark.parametrize("base_url, secure, refused", [
+    ("https://judging.example.org", False, "PLUMB_SECURE_COOKIES is off"),
+    ("http://judging.example.org", True, "nobody could stay logged in"),
+    ("judging.example.org", False, "must start with http"),
+    ("https://judging.example.org", True, None),
+    ("http://10.0.0.5:8080", False, None),     # a venue LAN without TLS is allowed
+])
+def test_a_real_instance_refuses_contradictory_settings(blank, base_url, secure, refused):
+    if refused is None:
+        _boot(blank, base_url=base_url, secure_cookies=secure)
+        return
+    with pytest.raises(SystemExit, match=refused):
+        _boot(blank, base_url=base_url, secure_cookies=secure)
+    assert not blank.database_path.exists()     # refused before touching anything

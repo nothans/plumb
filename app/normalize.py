@@ -147,6 +147,9 @@ class Fit:
     identifiable: bool = True
     dof: int = 0                       # residual degrees of freedom: reviews minus projects
     spread: Spread | None = None
+    # Projects fitted but not ranked (a superseded duplicate, a disqualified
+    # entry): their reviews still measure their judges' lean.
+    calibration_only: list[ProjectResult] = field(default_factory=list)
     _post: object = field(default=None, repr=False)
 
     def p_better(self, a: str, b: str, *, force: bool = False) -> float | None:
@@ -506,7 +509,11 @@ def _minimize_1d(f, lo: float, hi: float, grid: int = 25, tol: float = 1e-5) -> 
     return best, evals + 1
 
 
-def fit(observations: list[Observation]) -> Fit:
+def fit(observations: list[Observation], ranked: set[str] | None = None) -> Fit:
+    """Fit the model on every observation. With ranked, only those projects
+    are ranked and compared; the others are estimated alongside (so their
+    reviews still tell the model how each of their judges leans) and
+    returned in calibration_only."""
     obs = list(observations)
     if not obs:
         return Fit(0.0, 0.0, 0, 0, 0, [], [], identifiable=False)
@@ -537,6 +544,8 @@ def fit(observations: list[Observation]) -> Fit:
         )
         for p in d.projects
     ]
+    calibration = [r for r in presults if ranked is not None and r.project not in ranked]
+    presults = [r for r in presults if ranked is None or r.project in ranked]
     # Ties in the estimate (two projects with the same reviews from the same
     # judges) are broken by id, never by floating-point noise, so the order is
     # the same on every run and in every export.
@@ -590,6 +599,7 @@ def fit(observations: list[Observation]) -> Fit:
         dof=max(dof, 0),
         spread=post.spread() if post is not None else None,
         _post=post,
+        calibration_only=sorted(calibration, key=lambda r: r.project),
     )
 
 

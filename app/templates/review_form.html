@@ -27,7 +27,10 @@
       {% endfor %}
       <label>Comment <span class="hint">Seen by the organizers. Never shown to other judges.</span>
         <textarea name="comment" maxlength="4000" {% if not phase.judging_open %}disabled{% endif %}>{{ comment }}</textarea></label>
-      {% if phase.judging_open %}<div class="actions"><button class="primary" type="submit">{{ 'Update review' if review else 'Save review' }}</button><a href="/events/{{ event.id }}/judge">Back to queue</a></div>{% endif %}
+      {% if draft %}<p class="small muted">Draft saved {{ draft.updated_at | ts }}.</p>{% endif %}
+      {% if phase.judging_open %}<div class="actions"><button class="primary" type="submit" name="action" value="submit">{{ 'Update review' if review else 'Submit review' }}</button>
+        {% if not review %}<button type="submit" name="action" value="draft" formnovalidate>Save draft</button>{% else %}<a href="/projects/{{ project.id }}/review/receipt">Receipt</a>{% endif %}
+        <a href="/events/{{ event.id }}/judge">Back to queue</a></div>{% endif %}
     </form>
   </div>
   <aside class="panel">

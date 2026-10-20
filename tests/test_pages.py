@@ -20,8 +20,8 @@ def test_domain_errors_read_as_sentences_on_a_page(participant):
 
 
 def test_reviews_left_out_of_the_ranking_are_explained(organizer):
-    assert "5 more reviews score an entry dropped as a duplicate" in organizer.get("/events/evt_01/manage").text
-    assert "5 more reviews score an entry dropped as a duplicate" in organizer.get("/events/evt_01/manage/results").text
+    assert "5 of the reviews score an entry dropped as a duplicate" in organizer.get("/events/evt_01/manage").text
+    assert "5 of the reviews score an entry dropped as a duplicate" in organizer.get("/events/evt_01/manage/results").text
 
 
 def test_an_all_tie_ranking_says_so_once_instead_of_in_every_row(organizer):

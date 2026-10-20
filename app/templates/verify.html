@@ -14,8 +14,10 @@
         <div class="notice" role="status"><strong>Valid.</strong> This portal signed exactly this payload:
           {% if b.type == 'plumb.team/v1' %}a certificate for {{ b.team.name }} ({{ b.project.title }}) at {{ b.event.name }}{% if b.placement %}, rank {{ b.placement.rank }} of {{ b.placement.of }}{% endif %}{% if b.awards %}, {{ b.awards | join(", ") }}{% endif %}.
           {% elif b.type == 'plumb.judge/v1' %}{{ b.judge.name }} judged {{ b.event.name }} with {{ b.reviews }} review{{ '' if b.reviews == 1 else 's' }}.
-          {% elif b.type == 'plumb.results/v1' %}the results of {{ b.event.name }}: {{ b.ranking | length }} projects{% if b.awards %}, {{ b.awards | length }} prizes{% endif %}.{% endif %}
-          <a href="/records/{{ b.id }}">Open the record</a></div>
+          {% elif b.type == 'plumb.results/v1' %}the results of {{ b.event.name }}: {{ b.ranking | length }} projects{% if b.awards %}, {{ b.awards | length }} prizes{% endif %}.
+          {% elif b.type == 'plumb.review-receipt/v1' %}receipt No. {{ b.number }}, for a review of {{ b.project.title }} submitted {{ b.submitted_at | ts }}{% if b.updated_at != b.submitted_at %} and last changed {{ b.updated_at | ts }}{% endif %}.
+          {% elif b.type == 'plumb.entry-receipt/v1' %}receipt No. {{ b.number }}, for the entry {{ b.project.title }} submitted {{ b.submitted_at | ts }}{% if b.updated_at != b.submitted_at %} and last changed {{ b.updated_at | ts }}{% endif %}.{% endif %}
+          {% if b.id %}<a href="/records/{{ b.id }}">Open the record</a>{% endif %}</div>
         <pre class="json">{{ result.body | tojson(indent=2) }}</pre>
       {% else %}
         <div class="alert" role="alert"><strong>Not valid.</strong> {{ result.reason | sentence }}</div>

@@ -51,6 +51,25 @@
 </form>
 </div>
 {% if event %}
+<div class="panel" id="extensions">
+  <h2 class="mt-0">Deadline extensions</h2>
+  <p class="small muted">A later deadline for one team's entry, for a reason you can stand behind (a power cut, a venue problem). Its members stay as they were at the close. The extension has to end before judging closes, and once a judge reviews the entry it is final. Every extension is in the audit log and in the signed results.</p>
+  {% if extensions %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Team</th><th>Until</th><th>Reason</th><th></th></tr></thead>
+    <tbody>{% for x in extensions %}<tr><td>{{ x.team_name }}</td><td class="nowrap">{{ x.until | ts }}</td><td>{{ x.reason }}</td>
+      <td>{% if not event.results_published_at %}<form method="post" action="/events/{{ event.id }}/manage/extensions/{{ x.team_id }}/revoke">{{ csrf_field() }}<button class="link-btn" type="submit" aria-label="Revoke the extension for {{ x.team_name }}">Revoke</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  {% if not event.results_published_at and teams %}
+  <form class="row mt-s" method="post" action="/events/{{ event.id }}/manage/extensions">{{ csrf_field() }}
+    <label>Team<select name="team_id" required><option value="" selected disabled>Choose a team</option>{% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+    <label>Until (UTC)<input type="datetime-local" name="until" step="1" required></label>
+    <label>Reason<input type="text" name="reason" maxlength="300" required></label>
+    <button type="submit">Grant</button>
+  </form>
+  {% endif %}
+</div>
 <div class="panel">
   <h2 class="mt-0">{{ 'Restore' if event.archived_at else 'Archive' }}</h2>
   <p class="small muted">{% if event.archived_at %}Archived {{ event.archived_at | ts }}. Restoring puts it back on the home page and in the gallery.{% else %}Archiving takes the event off the home page and out of the gallery, for a finished event or a rehearsal. Nothing is deleted or frozen, its links keep working, and you can restore it.{% endif %}</p>

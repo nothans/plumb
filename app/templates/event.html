@@ -40,6 +40,7 @@
         <td>{% if winners.get(p.id) %}<a href="/projects/{{ winners[p.id].id }}">{{ winners[p.id].title }}</a>{% else %}<span class="muted">{{ p.description }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table>
       {% endif %}
       <h2>How projects are judged</h2>
+      {% if event.method_hash %}<p class="small">Judging method registered {{ event.rubric_locked_at | ts }}, before the ranking: <a href="/events/{{ event.id }}/method.json">method</a>, sha256 <code class="hash">{{ event.method_hash }}</code>. The signed results say whether the method that produced them is this one.</p>{% endif %}
       <p class="muted small">Each judge scores their assigned projects on these criteria. Scores are combined with these weights, then corrected for how harsh or generous each judge is. <a href="/events/{{ event.id }}/records">Signed records</a> are issued when results are published.</p>
       <table>
         <thead><tr><th>Criterion</th><th>Scale</th><th class="num">Weight</th></tr></thead>

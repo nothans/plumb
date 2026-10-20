@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Receipt {{ receipt.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div>
+  <div class="crumbs"><a href="{{ back }}">{{ back_label }}</a></div>
+  <h1>Receipt No. {{ receipt.number }}</h1>
+  <p>{% if receipt.kind == 'review' %}Your review of <strong>{{ project.title }}</strong>, as submitted{% else %}Your team's entry <strong>{{ project.title }}</strong>, as submitted{% endif %}, signed by this portal {{ receipt.issued_at | ts }}.</p>
+</div></div>
+<div class="panel">
+  {% if receipt.kind == 'review' %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Criterion</th><th class="num">Your score</th></tr></thead>
+    <tbody>{% for c in criteria %}{% if c.key in body["values"] %}<tr><td>{{ c.name }}</td><td class="num">{{ body["values"][c.key] }}</td></tr>{% endif %}{% endfor %}</tbody>
+  </table></div>
+  <p class="small muted">Your comment is covered by its hash, sha256 <code class="hash">{{ body.comment_sha256 }}</code>, so this receipt does not repeat it. Submitted {{ body.submitted_at | ts }}{% if body.updated_at != body.submitted_at %}, last changed {{ body.updated_at | ts }}{% endif %}.</p>
+  {% else %}
+  <ul class="small">
+    <li>Title: {{ body.project.title }}</li>
+    {% if body.project.repo_url %}<li>Repository: {{ body.project.repo_url }}</li>{% endif %}
+    {% if body.project.demo_url %}<li>Demo: {{ body.project.demo_url }}</li>{% endif %}
+    <li>Summary and description, by hash: <code class="hash">{{ body.project.summary_sha256 }}</code>, <code class="hash">{{ body.project.description_sha256 }}</code></li>
+    <li>Submitted {{ body.submitted_at | ts }}{% if body.updated_at != body.submitted_at %}, last changed {{ body.updated_at | ts }}{% endif %}</li>
+  </ul>
+  {% endif %}
+  <p class="small">What was submitted hashes to <code class="hash">{{ receipt.content_sha256 }}</code>. A later change gets a new receipt with a new number; this one stays as it is.</p>
+  <div class="actions">
+    <a class="btn primary" href="/receipts/{{ receipt.number }}.json" download="plumb-receipt-{{ receipt.number }}.json">Download the signed receipt</a>
+    <a class="btn" href="/verify">Check a receipt</a>
+  </div>
+  <p class="small muted mt-s">Keep the download. It is signed with key {{ receipt.key_id }} (published at <a href="/.well-known/plumb-key.json">/.well-known/plumb-key.json</a>), so it proves what you submitted and when, to anyone, even if this portal later says otherwise.</p>
+</div>
+{% endblock %}

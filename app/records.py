@@ -26,7 +26,7 @@ import secrets
 import sqlite3
 from types import SimpleNamespace
 
-from . import audit, canonical, domain, normalize
+from . import audit, canonical, domain, method, normalize
 from .db import new_id, now, transaction
 from .signing import Signer, verify
 
@@ -73,12 +73,15 @@ def _issue(conn: sqlite3.Connection, signer: Signer, event_id: str, kind: str, s
 
 def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_id: str, signer: Signer,
                     base_url: str, awards: dict[str, str] | None = None,
-                    reasons: dict[str, str] | None = None) -> dict:
+                    reasons: dict[str, str] | None = None, groups_reason: str = "") -> dict:
     """Sign and freeze the results. awards maps prize id to project id; a
     prize left out gets the suggested default, and an empty string means
     "not awarded". reasons maps prize id to the organizers' reason for the
     award, required for a close call (see domain.award_check) and signed
-    into the record with it."""
+    into the record with it. groups_reason is required when the judges fall
+    into groups that share no projects: judge lean cannot be compared
+    across them, so one ranking of everyone is the organizers' call, and the
+    record says so."""
     actor = domain.require_organizer(conn, event_id, actor)
     with transaction(conn):
         event = domain.get_event(conn, event_id)
@@ -99,6 +102,13 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
         if not fit.identifiable:
             raise domain.Conflict("there are not enough reviews to estimate how uncertain the ranking is "
                                   "(the event needs more reviews than projects); assign more judges first")
+        groups_reason = domain.clean_text(groups_reason, "reason for ranking across judge groups", max_len=500)
+        if fit.components > 1 and not groups_reason:
+            raise domain.Invalid(
+                f"the judges fall into {fit.components} groups that share no projects, so judge lean cannot be "
+                "compared across them and one ranking of everyone is not something the reviews can support on "
+                "their own; add bridging assignments, or give a reason for ranking across them, which is signed "
+                "into the record")
         ranked = {p.project for p in fit.projects}
         chosen, close_calls = [], []
         overall_taken: set[str] = set()
@@ -156,6 +166,13 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
                 "judge_sd": round(fit.judge_sd, 4), "noise_sd": round(fit.noise_sd, 4),
                 "spread_sd": round(fit.spread_sd, 4), "spread": fit.spread_summary, "dof": fit.dof,
                 "observations": fit.n_observations, "graph_components": fit.components,
+                "across_groups_reason": groups_reason or None,
+                "registered": {"sha256": event["method_hash"], "at": event["rubric_locked_at"]}
+                if event["method_hash"] else None,
+                "sha256": method.digest(method.describe(res["criteria"])),
+                "matches_registered": None if not event["method_hash"]
+                else method.digest(method.describe(res["criteria"])) == event["method_hash"],
+                "description": method.describe(res["criteria"]),
             },
             "rubric": [{"key": c["key"], "weight": c["weight"], "min": c["min_value"], "max": c["max_value"]}
                        for c in res["criteria"]],
@@ -164,6 +181,8 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
             "ranking": ranking,
             "community_vote": domain.tally_summary(conn, event_id),
             "excluded_reviews": len(res["excluded"]),
+            "extensions": [{"team": x["team_id"], "until": x["until"], "reason": x["reason"]}
+                           for x in domain.extensions(conn, event_id)],
             "audit_head": head,
         }, base_url)
 
@@ -221,6 +240,84 @@ def publish_results(conn: sqlite3.Connection, actor: domain.Actor | None, event_
                              "awards": {a["name"]: a["project"] for a in chosen}},
                      ip=actor.ip)
     return {"results_record": results_id, "judge_records": judge_records, "team_records": team_records}
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _issue_receipt(conn: sqlite3.Connection, signer: Signer, base_url: str, event_id: str, kind: str, subject: str,
+                   content: dict, *, owner_id: str | None = None, team_id: str | None = None) -> sqlite3.Row:
+    """The receipt for exactly this content: the one already issued, or a
+    new one with the next number. Issued when the receipt page is first
+    opened, so a crash between submitting and receipting loses nothing."""
+    digest = _sha(canonical.dumps(content))
+    with transaction(conn):
+        row = conn.execute("SELECT * FROM receipts WHERE kind = ? AND subject = ? AND content_sha256 = ?",
+                           (kind, subject, digest)).fetchone()
+        if row:
+            return row
+        number = conn.execute("SELECT coalesce(max(number), 0) + 1 FROM receipts").fetchone()[0]
+        issued = now()
+        payload = canonical.dumps({"type": f"plumb.{kind}-receipt/v1", "number": number, "issuer": base_url or None,
+                                   "issued_at": issued, "content_sha256": digest, **content})
+        conn.execute("INSERT INTO receipts(number, event_id, kind, subject, owner_id, team_id, content_sha256, payload, "
+                     "signature, key_id, issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                     (number, event_id, kind, subject, owner_id, team_id, digest, payload, signer.sign(payload),
+                      signer.key_id, issued))
+        audit.append(conn, f"receipt.{kind}", actor_id=owner_id, event_id=event_id, subject=subject,
+                     detail={"number": number, "content_sha256": digest})
+        return conn.execute("SELECT * FROM receipts WHERE number = ?", (number,)).fetchone()
+
+
+def review_receipt(conn: sqlite3.Connection, actor: domain.Actor | None, project_id: str, signer: Signer,
+                   base_url: str) -> sqlite3.Row:
+    """A judge's receipt for their submitted review of project_id, as it
+    stands. The comment is covered by its hash, so the receipt can be shown
+    without repeating it."""
+    actor = domain.require_user(actor)
+    review = domain.own_review(conn, actor, project_id)
+    if review is None:
+        raise domain.NotFound("you have not submitted a review of this project")
+    project = domain.get_project(conn, project_id)
+    content = {"event": project["event_id"], "project": {"id": project["id"], "title": project["title"]},
+               "judge": actor.id, "review": review["id"], "values": review["values"],
+               "comment_sha256": _sha(review["comment"]), "submitted_at": review["submitted_at"],
+               "updated_at": review["updated_at"]}
+    return _issue_receipt(conn, signer, base_url, project["event_id"], "review", review["id"], content, owner_id=actor.id)
+
+
+def entry_receipt(conn: sqlite3.Connection, actor: domain.Actor | None, project_id: str, signer: Signer,
+                  base_url: str) -> sqlite3.Row:
+    """A team's receipt for its submitted entry, as it stands: what was
+    submitted and when, with the long fields covered by their hashes."""
+    actor = domain.require_user(actor)
+    project = domain.get_project(conn, project_id)
+    if not conn.execute("SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+                        (project["team_id"], actor.id)).fetchone():
+        raise domain.Forbidden("that is not your team's entry")
+    if project["status"] != "submitted":
+        raise domain.Conflict("this entry is a draft; submit it to get a receipt")
+    content = {"event": project["event_id"], "team": project["team_id"],
+               "project": {"id": project["id"], "title": project["title"], "track": project["track_id"],
+                           "repo_url": project["repo_url"], "demo_url": project["demo_url"],
+                           "summary_sha256": _sha(project["summary"]), "description_sha256": _sha(project["description"])},
+               "submitted_at": project["submitted_at"], "updated_at": project["updated_at"]}
+    return _issue_receipt(conn, signer, base_url, project["event_id"], "entry", project_id, content,
+                          owner_id=actor.id, team_id=project["team_id"])
+
+
+def get_receipt(conn: sqlite3.Connection, actor: domain.Actor | None, number: int) -> sqlite3.Row:
+    """A receipt, for its owner (the judge, or the team) and the event's organizers."""
+    actor = domain.require_user(actor)
+    row = conn.execute("SELECT * FROM receipts WHERE number = ?", (number,)).fetchone()
+    if row is None:
+        raise domain.NotFound("no such receipt")
+    mine = (row["owner_id"] == actor.id if row["kind"] == "review" else bool(conn.execute(
+        "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?", (row["team_id"], actor.id)).fetchone()))
+    if not mine and not domain.is_organizer(conn, row["event_id"], actor):
+        raise domain.NotFound("no such receipt")   # the same answer as a missing one
+    return row
 
 
 def published_results(conn: sqlite3.Connection, event_id: str) -> dict | None:
